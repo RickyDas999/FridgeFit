@@ -1,10 +1,10 @@
 from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, String
+from sqlalchemy import JSON, CheckConstraint, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from app.enums import CanonicalUnit
+from app.enums import CanonicalUnit, IngredientRole
 
 
 class Ingredient(Base):
@@ -51,3 +51,34 @@ class InventoryBatch(Base):
     depleted_at: Mapped[datetime | None] = mapped_column(default=None)
 
     ingredient: Mapped["Ingredient"] = relationship(back_populates="batches")
+
+
+class Recipe(Base):
+    """A recipe's metadata and instructions. Macros are derived, not stored."""
+
+    __tablename__ = "recipes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    instructions: Mapped[list] = mapped_column(JSON)
+    source_url: Mapped[str | None] = mapped_column(String, default=None)
+
+    recipe_ingredients: Mapped[list["RecipeIngredient"]] = relationship(back_populates="recipe")
+
+
+class RecipeIngredient(Base):
+    """One ingredient's role and quantity within a recipe."""
+
+    __tablename__ = "recipe_ingredients"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_recipe_ingredient_quantity_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id"))
+    ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredients.id"))
+    quantity: Mapped[float]
+    role: Mapped[IngredientRole]
+
+    recipe: Mapped["Recipe"] = relationship(back_populates="recipe_ingredients")
+    ingredient: Mapped["Ingredient"] = relationship()
