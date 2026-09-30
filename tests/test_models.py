@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 from sqlalchemy import create_engine
@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.enums import CanonicalUnit, IngredientRole
-from app.models import Ingredient, InventoryBatch, Recipe, RecipeIngredient
+from app.models import Ingredient, InventoryBatch, MealLog, MealLogIngredient, NutritionGoal, Recipe, RecipeIngredient
 
 
 @pytest.fixture
@@ -220,5 +220,109 @@ def test_recipe_ingredient_requires_real_recipe(session):
         quantity=100,
         role=IngredientRole.PRIMARY,
     ))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def make_meal_log(**overrides):
+    defaults = dict(
+        calories=450,
+        protein=35,
+        carbs=20,
+        fat=15,
+        consumed_at=datetime(2026, 1, 1, 12, 30),
+    )
+    defaults.update(overrides)
+    return MealLog(**defaults)
+
+
+def test_meal_log_persists_and_retrieves(session):
+    session.add(make_meal_log())
+    session.commit()
+
+    fetched = session.query(MealLog).one()
+    assert fetched.calories == 450
+    assert fetched.consumed_at == datetime(2026, 1, 1, 12, 30)
+
+
+def test_meal_log_has_many_meal_log_ingredients(session):
+    ingredient = make_ingredient()
+    meal_log = make_meal_log()
+    session.add_all([ingredient, meal_log])
+    session.commit()
+
+    session.add_all([
+        MealLogIngredient(meal_log_id=meal_log.id, ingredient_id=ingredient.id, quantity=150),
+        MealLogIngredient(meal_log_id=meal_log.id, ingredient_id=ingredient.id, quantity=10),
+    ])
+    session.commit()
+
+    session.refresh(meal_log)
+    assert len(meal_log.meal_log_ingredients) == 2
+
+
+def test_meal_log_macros_do_not_change_if_ingredient_nutrition_changes(session):
+    ingredient = make_ingredient()
+    meal_log = make_meal_log(calories=450)
+    session.add_all([ingredient, meal_log])
+    session.commit()
+
+    session.add(MealLogIngredient(meal_log_id=meal_log.id, ingredient_id=ingredient.id, quantity=150))
+    session.commit()
+
+    ingredient.calories_per_base_unit = 999
+    session.commit()
+
+    session.refresh(meal_log)
+    assert meal_log.calories == 450
+
+
+def test_negative_meal_log_calories_rejected(session):
+    session.add(make_meal_log(calories=-1))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+def test_macro_only_meal_saves_no_meal_ingredients(session):
+    session.add(make_meal_log())
+    session.commit()
+    meal_log = session.query(MealLog).one()
+
+    assert meal_log.meal_log_ingredients == []
+
+
+def make_nutrition_goal(**overrides):
+    defaults = dict(
+        calories=2200,
+        protein=160,
+        carbs=220,
+        fat=70,
+        effective_date=date(2026, 1, 1),
+    )
+    defaults.update(overrides)
+    return NutritionGoal(**defaults)
+
+
+def test_nutrition_goal_persists_and_retrieves(session):
+    session.add(make_nutrition_goal())
+    session.commit()
+
+    fetched = session.query(NutritionGoal).one()
+    assert fetched.calories == 2200
+    assert fetched.effective_date == date(2026, 1, 1)
+
+
+def test_changing_goal_preserves_prior_goal_history(session):
+    session.add(make_nutrition_goal(effective_date=date(2026, 1, 1), calories=2200))
+    session.commit()
+
+    session.add(make_nutrition_goal(effective_date=date(2026, 3, 1), calories=2000))
+    session.commit()
+
+    goals = session.query(NutritionGoal).order_by(NutritionGoal.effective_date).all()
+    assert [g.calories for g in goals] == [2200, 2000]
+
+
+def test_negative_nutrition_goal_calories_rejected(session):
+    session.add(make_nutrition_goal(calories=-1))
     with pytest.raises(IntegrityError):
         session.commit()

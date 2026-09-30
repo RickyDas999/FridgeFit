@@ -82,3 +82,68 @@ class RecipeIngredient(Base):
 
     recipe: Mapped["Recipe"] = relationship(back_populates="recipe_ingredients")
     ingredient: Mapped["Ingredient"] = relationship()
+
+
+class MealLog(Base):
+    """An immutable historical consumption event.
+
+    Macros are snapshotted at consumption time, not derived, so editing an
+    Ingredient's nutrition data later cannot rewrite past meal history.
+    """
+
+    __tablename__ = "meal_logs"
+    __table_args__ = (
+        CheckConstraint("calories >= 0", name="ck_meal_log_calories_nonneg"),
+        CheckConstraint("protein >= 0", name="ck_meal_log_protein_nonneg"),
+        CheckConstraint("carbs >= 0", name="ck_meal_log_carbs_nonneg"),
+        CheckConstraint("fat >= 0", name="ck_meal_log_fat_nonneg"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    calories: Mapped[float]
+    protein: Mapped[float]
+    carbs: Mapped[float]
+    fat: Mapped[float]
+    consumed_at: Mapped[datetime]
+
+    meal_log_ingredients: Mapped[list["MealLogIngredient"]] = relationship(back_populates="meal_log")
+
+
+class MealLogIngredient(Base):
+    """Traces the actual quantity of one Ingredient used within a MealLog."""
+
+    __tablename__ = "meal_log_ingredients"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_meal_log_ingredient_quantity_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meal_log_id: Mapped[int] = mapped_column(ForeignKey("meal_logs.id"))
+    ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredients.id"))
+    quantity: Mapped[float]
+
+    meal_log: Mapped["MealLog"] = relationship(back_populates="meal_log_ingredients")
+    ingredient: Mapped["Ingredient"] = relationship()
+
+
+class NutritionGoal(Base):
+    """A nutrition target, effective starting a given date.
+
+    Changing goals creates a new row rather than overwriting the old one, so
+    past goals remain intact for historical "what was my goal on date X" checks.
+    """
+
+    __tablename__ = "nutrition_goals"
+    __table_args__ = (
+        CheckConstraint("calories >= 0", name="ck_nutrition_goal_calories_nonneg"),
+        CheckConstraint("protein >= 0", name="ck_nutrition_goal_protein_nonneg"),
+        CheckConstraint("carbs >= 0", name="ck_nutrition_goal_carbs_nonneg"),
+        CheckConstraint("fat >= 0", name="ck_nutrition_goal_fat_nonneg"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    calories: Mapped[float]
+    protein: Mapped[float]
+    carbs: Mapped[float]
+    fat: Mapped[float]
+    effective_date: Mapped[date]
