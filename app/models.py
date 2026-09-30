@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import uuid
 
 from sqlalchemy import JSON, CheckConstraint, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -29,7 +30,6 @@ class Ingredient(Base):
     fat_per_base_unit: Mapped[float]
     source_url: Mapped[str | None] = mapped_column(String, default=None)
     nutrition_updated_at: Mapped[datetime]
-
     batches: Mapped[list["InventoryBatch"]] = relationship(back_populates="ingredient")
 
 
@@ -62,9 +62,11 @@ class Recipe(Base):
     name: Mapped[str] = mapped_column(String)
     instructions: Mapped[list] = mapped_column(JSON)
     source_url: Mapped[str | None] = mapped_column(String, default=None)
+    prep_minutes: Mapped[int]
+    servings: Mapped[int]
 
     recipe_ingredients: Mapped[list["RecipeIngredient"]] = relationship(back_populates="recipe")
-
+    meal_logs: Mapped[list["MealLog"]] = relationship(back_populates="recipe")
 
 class RecipeIngredient(Base):
     """One ingredient's role and quantity within a recipe."""
@@ -100,13 +102,17 @@ class MealLog(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    recipe_id: Mapped[int | None] = mapped_column(ForeignKey("recipes.id"))
+    name: Mapped[str]
     calories: Mapped[float]
     protein: Mapped[float]
     carbs: Mapped[float]
     fat: Mapped[float]
     consumed_at: Mapped[datetime]
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(unique=True)
 
     meal_log_ingredients: Mapped[list["MealLogIngredient"]] = relationship(back_populates="meal_log")
+    recipe: Mapped["Recipe"] = relationship(back_populates="meal_logs")
 
 
 class MealLogIngredient(Base):

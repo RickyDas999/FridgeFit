@@ -137,6 +137,8 @@ def make_recipe(**overrides):
     defaults = dict(
         name="Grilled Chicken Bowl",
         instructions=["Season chicken", "Grill 6 minutes per side", "Slice and serve"],
+        prep_minutes=20,
+        servings=2,
     )
     defaults.update(overrides)
     return Recipe(**defaults)
@@ -235,6 +237,7 @@ def test_recipe_ingredient_requires_real_recipe(session):
 
 def make_meal_log(**overrides):
     defaults = dict(
+        name="Chicken and Rice",
         calories=450,
         protein=35,
         carbs=20,
@@ -359,5 +362,23 @@ def test_second_feedback_for_same_meal_log_rejected(session):
     session.commit()
 
     session.add(MealFeedback(meal_log_id=meal_log.id, rating=2))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+def test_higher_than_range_meal_feedback(session):
+    meal_log = make_meal_log()
+    session.add(meal_log)
+    session.commit()
+
+    session.add(MealFeedback(meal_log_id=meal_log.id, rating=6))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+def test_lower_than_range_meal_feedback(session):
+    meal_log = make_meal_log()
+    session.add(meal_log)
+    session.commit()
+
+    session.add(MealFeedback(meal_log_id=meal_log.id, rating=0))
     with pytest.raises(IntegrityError):
         session.commit()
