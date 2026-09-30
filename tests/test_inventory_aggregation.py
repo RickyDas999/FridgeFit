@@ -1,7 +1,5 @@
 from datetime import datetime
 
-import pytest
-
 from app.domain.inventory_aggregation import aggregate_inventory_by_ingredient
 from app.persistence.models import InventoryBatch
 
