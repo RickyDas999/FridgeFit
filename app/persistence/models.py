@@ -4,8 +4,8 @@ import uuid
 from sqlalchemy import JSON, CheckConstraint, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
-from app.enums import CanonicalUnit, IngredientRole
+from app.persistence.database import Base
+from app.persistence.enums import CanonicalUnit, IngredientRole
 
 
 class Ingredient(Base):

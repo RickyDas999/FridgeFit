@@ -1,13 +1,10 @@
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
-from app.enums import CanonicalUnit, IngredientRole
-from app.models import (
+from app.persistence.enums import CanonicalUnit, IngredientRole
+from app.persistence.models import (
     Ingredient,
     InventoryBatch,
     MealFeedback,
@@ -17,14 +14,6 @@ from app.models import (
     Recipe,
     RecipeIngredient,
 )
-
-
-@pytest.fixture
-def session():
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    with sessionmaker(bind=engine)() as session:
-        yield session
 
 
 def make_ingredient(**overrides):

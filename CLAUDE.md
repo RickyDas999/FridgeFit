@@ -433,11 +433,106 @@ The project should remain small enough that the developer can comfortably naviga
 
 ## Current Status
 
-The repository starts empty.
+The persistence foundation is implemented and committed.
 
-No implementation exists yet.
+Current stack:
+- Python 3.11+
+- SQLAlchemy 2.x
+- SQLite
+- pytest
 
-Work only on the current task supplied in the active Claude Code prompt.
+Implemented persistence models:
+- Ingredient
+- InventoryBatch
+- Recipe
+- RecipeIngredient
+- MealLog
+- MealLogIngredient
+- NutritionGoal
+- MealFeedback
+
+Important implemented persistence behavior:
+- Ingredient stores canonical nutrition reference data.
+- Inventory uses separate purchase batches.
+- Recipe macros are not stored.
+- MealLog macros are historical snapshots.
+- MealLog may optionally reference the Recipe it came from.
+- MealLogIngredient preserves actual ingredient quantities used.
+- NutritionGoal preserves historical goals using effective dates.
+- MealFeedback records a 1–5 rating for an individual MealLog.
+- SQLite foreign-key enforcement is enabled for every connection.
+- Recipe instructions use a JSON column.
+- MealLog supports a nullable unique idempotency key for future confirmation logic.
+
+The model test suite is passing.
+
+Do not redesign or replace the persistence layer unless a current requirement exposes a concrete problem.
+
+The following remain intentionally unimplemented:
+- FastAPI/API layer
+- recommendation engine
+- nutrition-data API integration
+- Claude API integration
+- FEFO inventory consumption
+- meal-confirmation transaction/business logic
+- remaining-macro calculation
+- recipe macro calculation
+- inventory aggregation
+- Alembic migrations
+- Docker
+
+---
+
+## Current Milestone — Core Deterministic Domain Logic
+
+The next milestone is to implement FridgeFit's deterministic business logic before adding FastAPI or external services.
+
+The milestone should be developed as multiple small, independently reviewable slices.
+
+Planned slice order:
+
+1. Recipe macro calculation
+2. Current nutrition-state calculation
+3. Inventory aggregation
+4. FEFO inventory consumption
+5. Atomic meal confirmation
+
+Do not implement the entire milestone at once.
+
+Each slice should be small enough for one manual Git commit and should include focused tests.
+
+### Slice 1 — Recipe Macro Calculation
+
+This is the next approved implementation slice.
+
+Goal:
+
+Given a Recipe with RecipeIngredients and their referenced Ingredient nutrition data, calculate total recipe macros deterministically.
+
+Use:
+- RecipeIngredient.quantity
+- Ingredient.nutrition_base_quantity
+- Ingredient calories/protein/carbs/fat per base unit
+
+Do not persist calculated Recipe macros.
+
+Do not modify the database schema unless a real blocker is discovered.
+
+Do not implement:
+- recommendation scoring
+- freshness scoring
+- inventory availability
+- FEFO
+- meal confirmation
+- remaining nutrition goals
+- FastAPI endpoints
+- external API calls
+
+Prefer pure/testable domain logic that does not require HTTP or external services.
+
+Before choosing where this logic should live, inspect the current project structure. If introducing a new module is justified because this is now business logic rather than persistence logic, explain the proposed module briefly before implementing it.
+
+The developer should personally run and inspect the relevant tests before this slice is considered complete.
 
 ## Development Workflow
 
