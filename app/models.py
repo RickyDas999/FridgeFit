@@ -147,3 +147,18 @@ class NutritionGoal(Base):
     carbs: Mapped[float]
     fat: Mapped[float]
     effective_date: Mapped[date]
+
+
+class MealFeedback(Base):
+    """A 1-5 enjoyment rating for one MealLog. At most one per MealLog."""
+
+    __tablename__ = "meal_feedback"
+    __table_args__ = (
+        CheckConstraint("rating >= 1 AND rating <= 5", name="ck_meal_feedback_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meal_log_id: Mapped[int] = mapped_column(ForeignKey("meal_logs.id"), unique=True)
+    rating: Mapped[int]
+
+    meal_log: Mapped["MealLog"] = relationship()

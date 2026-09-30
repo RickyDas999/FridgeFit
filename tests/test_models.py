@@ -7,7 +7,16 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.enums import CanonicalUnit, IngredientRole
-from app.models import Ingredient, InventoryBatch, MealLog, MealLogIngredient, NutritionGoal, Recipe, RecipeIngredient
+from app.models import (
+    Ingredient,
+    InventoryBatch,
+    MealFeedback,
+    MealLog,
+    MealLogIngredient,
+    NutritionGoal,
+    Recipe,
+    RecipeIngredient,
+)
 
 
 @pytest.fixture
@@ -324,5 +333,31 @@ def test_changing_goal_preserves_prior_goal_history(session):
 
 def test_negative_nutrition_goal_calories_rejected(session):
     session.add(make_nutrition_goal(calories=-1))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_meal_feedback_persists_and_retrieves(session):
+    meal_log = make_meal_log()
+    session.add(meal_log)
+    session.commit()
+
+    session.add(MealFeedback(meal_log_id=meal_log.id, rating=4))
+    session.commit()
+
+    fetched = session.query(MealFeedback).one()
+    assert fetched.rating == 4
+    assert fetched.meal_log.calories == 450
+
+
+def test_second_feedback_for_same_meal_log_rejected(session):
+    meal_log = make_meal_log()
+    session.add(meal_log)
+    session.commit()
+
+    session.add(MealFeedback(meal_log_id=meal_log.id, rating=4))
+    session.commit()
+
+    session.add(MealFeedback(meal_log_id=meal_log.id, rating=2))
     with pytest.raises(IntegrityError):
         session.commit()
