@@ -52,6 +52,9 @@ For architecture, see `docs/architecture.md`. For what is currently built, see
 - Recipe macros are NOT stored. They are derived from RecipeIngredient quantities and Ingredient
   nutrition.
 - RecipeIngredient classifies each ingredient as PRIMARY, SUPPORTING, or OPTIONAL.
+- A recipe must have at least one ingredient. A recipe with no ingredients is invalid: it must
+  never be persisted, and domain logic rejects it with an error rather than scoring it.
+- A valid recipe lists each ingredient at most once.
 
 ## Meal History
 
@@ -93,17 +96,30 @@ Ranking order:
 
 Eligibility and availability:
 
-- Meals missing more than one required ingredient are excluded.
-- A meal missing exactly one ingredient may still be recommended.
+- An ingredient is **missing** only when none of it is on hand. A partial amount counts as
+  available; the shortfall is reported to the user (e.g. 68% of the needed amount on hand) and
+  lowers the availability score proportionally.
+- Only PRIMARY ingredients are required. Meals missing more than one PRIMARY ingredient are
+  excluded.
+- A meal missing exactly one PRIMARY ingredient may still be recommended. Missing SUPPORTING or
+  OPTIONAL ingredients never exclude a meal.
 - Ingredient importance uses PRIMARY, SUPPORTING, OPTIONAL.
-- Missing-ingredient importance affects the availability score.
+- Missing-ingredient importance affects the availability score: each ingredient's fraction on
+  hand (capped at 1) is averaged with role weights PRIMARY 3, SUPPORTING 2, OPTIONAL 1.
+
+Combining scores:
+
+- Each component score is on a 0–1 scale and they are combined as a weighted sum.
+- Default weights follow the ranking order: availability 0.4, freshness 0.3, macro fit 0.2,
+  enjoyment 0.1.
 
 Freshness:
 
 - Freshness prioritizes the most urgent ingredient and may receive a small bonus for additional
   expiring-soon ingredients.
 - Past-entered use-by dates should be surfaced as warnings, but FridgeFit must not make the user's
-  food-safety decision.
+  food-safety decision. Batches past their use-by date therefore still count as available
+  inventory.
 
 Macro priorities:
 

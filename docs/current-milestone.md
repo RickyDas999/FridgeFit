@@ -11,10 +11,37 @@ Last updated: 2026-10-07
 
 **Completed: Core Deterministic Domain Logic.** All five planned slices are implemented and tested.
 
-**Next milestone: Recommendations.** Approved by the developer as the next milestone. Its scope
-and slice plan have not been defined yet. Do not begin implementing it until the developer
-approves a slice plan; the governing rules are in the Recommendations section of
-`docs/domain-rules.md`.
+**Active milestone: Recommendations.** Governing rules are in the Recommendations section of
+`docs/domain-rules.md`. Every slice is a pure function in `app/domain/` and adds to a working
+ranker, so each slice ends with runnable recommendations.
+
+| # | Slice | Status |
+|---|---|---|
+| 1 | Availability, eligibility, and a weighted-sum ranker (`availability.py`, `recommendations.py`) | Implemented, not yet committed |
+| 2 | Freshness score and past-use-by warnings | Not started |
+| 3 | Macro fit score | Not started |
+| 4 | Enjoyment score | Not started |
+| 5 | Recent frequency shown informationally | Not started |
+
+**Queued next, after slice 1 is committed: input validation.** Approved by the developer to run
+before slice 2.
+
+- Add dedicated input validators, kept separate so domain logic stays focused, covering input edge
+  cases across the app. Exact edge cases and module layout are to be agreed when the slice starts.
+- Reject a recipe with no ingredients in every recipe-handling domain function
+  (`calculate_recipe_macros`, `confirm_meal`; `assess_recipe_availability` already does, inline).
+- Prevent a recipe with no ingredients from ever being persisted, with a save-time check (SQLAlchemy
+  `before_flush`) in `app/persistence/`. Tests that save a recipe before attaching its ingredients
+  must be updated.
+
+Known inconsistency until then: `test_macros_are_zero_for_recipe_with_no_ingredients` expects zero
+macros for a recipe with no ingredients, which contradicts `docs/domain-rules.md`.
+
+Open decisions, to settle when their slice starts: the "expiring soon" threshold (2), whole recipe
+vs. per-serving macro fit (3), the score for a recipe with no ratings (4).
+
+Until a component's slice lands, `combine_scores` leaves it out and rescales the remaining default
+weights to sum to 1.
 
 ## Implemented
 
@@ -64,7 +91,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-55 tests across `tests/test_models.py` and one test module per domain module. Run with:
+68 tests across `tests/test_models.py` and one test module per domain module. Run with:
 
 ```bash
 .venv/bin/python -m pytest tests/ -v
