@@ -5,6 +5,8 @@ from typing import NamedTuple, Sequence
 from app.domain.availability import RecipeAvailability, assess_recipe_availability
 from app.domain.freshness import RecipeFreshness, assess_recipe_freshness
 from app.domain.inventory_aggregation import aggregate_inventory_by_ingredient
+from app.domain.macro_fit import MacroFit, assess_macro_fit
+from app.domain.nutrition_state import RemainingMacros
 from app.domain.validation import validate_calendar_date
 from app.persistence.models import InventoryBatch, Recipe
 
@@ -23,6 +25,7 @@ class Recommendation(NamedTuple):
     score: float
     availability: RecipeAvailability
     freshness: RecipeFreshness
+    macro_fit: MacroFit | None
 
 
 def combine_scores(scores: dict[str, float]) -> float:
@@ -42,16 +45,22 @@ def combine_scores(scores: dict[str, float]) -> float:
 
 
 def recommend_recipes(
-    recipes: Sequence[Recipe], batches: Sequence[InventoryBatch], as_of: date
+    recipes: Sequence[Recipe],
+    batches: Sequence[InventoryBatch],
+    as_of: date,
+    remaining_macros: RemainingMacros | None,
 ) -> list[Recommendation]:
     """Rank recipes by how well they can be made on a given date.
 
     Recipes that are ineligible (more than one PRIMARY ingredient missing) are excluded.
 
     Args:
-        recipes: Candidate recipes. Their ``recipe_ingredients`` must be loadable.
+        recipes: Candidate recipes. Their ingredients and nutrition data must be loadable.
         batches: Current inventory batches across all ingredients.
         as_of: The calendar date to recommend for, used to judge freshness.
+        remaining_macros: Today's remaining macros, as returned by
+            ``calculate_remaining_macros``. Pass None when no nutrition goal is in effect yet;
+            macro fit is then left out of the ranking.
 
     Returns:
         Eligible recipes as Recommendations, highest score first.
@@ -72,10 +81,15 @@ def recommend_recipes(
         if not availability.is_eligible:
             continue
         freshness = assess_recipe_freshness(recipe, batches_by_ingredient, as_of)
-        score = combine_scores({
-            "availability": availability.score,
-            "freshness": freshness.score,
-        })
-        recommendations.append(Recommendation(recipe, score, availability, freshness))
+        scores = {"availability": availability.score, "freshness": freshness.score}
+
+        macro_fit = None
+        if remaining_macros is not None:
+            macro_fit = assess_macro_fit(recipe, remaining_macros)
+            scores["macro_fit"] = macro_fit.score
+
+        recommendations.append(
+            Recommendation(recipe, combine_scores(scores), availability, freshness, macro_fit)
+        )
 
     return sorted(recommendations, key=lambda r: r.score, reverse=True)
