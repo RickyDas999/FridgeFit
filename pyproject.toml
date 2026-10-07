@@ -7,7 +7,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff==0.16.10"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 99
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/W: PEP 8 style, F: likely bugs, I: import order, D: docstrings.
+select = ["E", "W", "F", "I", "D"]
+# Docstrings are required on functions and classes, not on modules or packages.
+ignore = ["D100", "D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

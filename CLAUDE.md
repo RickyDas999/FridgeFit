@@ -229,6 +229,13 @@ Follow PEP 8 formatting throughout (naming, whitespace, blank lines between top-
 
 Maximum line length is 99 characters — the team-agreed extension PEP 8 explicitly permits over its 79-character default.
 
+Ruff enforces this style, import order, and the docstring rules below; its configuration lives in `pyproject.toml`. CI runs the same checks on every pull request. Before reporting a slice complete, run:
+
+```bash
+.venv/bin/ruff check .
+.venv/bin/python -m pytest tests/
+```
+
 Every function and class gets a docstring, enterprise-style, regardless of how obvious the function appears:
 - one-line summary of what it does;
 - `Args:` describing each parameter, when the function takes any;
@@ -287,6 +294,35 @@ Escalate a decision to the developer when it materially affects:
 Routine coding, testing, debugging, and small refactors should be handled directly in this repository.
 
 Prefer teaching through the actual code and failing tests rather than long theoretical explanations.
+
+---
+
+## Branch and Pull Request Workflow
+
+FridgeFit now uses feature branches and pull requests for meaningful changes.
+
+Claude Code's role remains local implementation and debugging only.
+
+Rules:
+
+- Work only on the branch that is currently checked out.
+- Do not create branches.
+- Do not switch branches.
+- Do not merge branches.
+- Do not commit.
+- Do not push.
+- Do not open or merge pull requests.
+- The developer owns branch creation, commits, pushes, pull requests, and merges.
+- Keep each implementation task small enough to become one independently reviewable commit or PR slice.
+- Do not begin the next slice until the developer explicitly asks.
+- When finishing a slice, report:
+  1. files changed;
+  2. behavior implemented;
+  3. important design decisions;
+  4. tests run and results;
+  5. anything the developer should inspect before committing.
+
+Before making changes, confirm that the currently checked-out branch matches the task being requested. If it appears mismatched, surface that fact instead of switching branches automatically.
 
 ---
 
