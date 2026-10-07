@@ -2,10 +2,10 @@ from datetime import datetime
 
 import pytest
 
+from app.domain.recipe_macros import calculate_recipe_macros
 from app.errors import InvalidInputError
 from app.persistence.enums import CanonicalUnit, IngredientRole
 from app.persistence.models import Ingredient, Recipe, RecipeIngredient
-from app.domain.recipe_macros import calculate_recipe_macros
 
 
 def make_ingredient(**overrides):
