@@ -17,30 +17,18 @@ ranker, so each slice ends with runnable recommendations.
 
 | # | Slice | Status |
 |---|---|---|
-| 1 | Availability, eligibility, and a weighted-sum ranker (`availability.py`, `recommendations.py`) | Implemented, not yet committed |
-| 2 | Freshness score and past-use-by warnings | Not started |
+| 1 | Availability, eligibility, and a weighted-sum ranker (`availability.py`, `recommendations.py`) | Done |
+| — | Input validation (`app/errors.py`, `app/domain/validation.py`, save-time recipe check) | Done |
+| 2 | Freshness score and expired-batch warnings (`freshness.py`) | Implemented, not yet committed |
 | 3 | Macro fit score | Not started |
 | 4 | Enjoyment score | Not started |
 | 5 | Recent frequency shown informationally | Not started |
 
-**Input validation (between slices 1 and 2): implemented, not yet committed.**
+Open decisions, to settle when their slice starts: whole recipe vs. per-serving macro fit (3), the
+score for a recipe with no ratings (4).
 
-- `app/errors.py` defines `InvalidInputError(ValueError)`, raised by all input validation.
-- `app/domain/validation.py` holds the domain input validators; each domain function calls the
-  ones it needs at its top. They reject:
-  - a recipe with no ingredients (`calculate_recipe_macros`, `assess_recipe_availability`,
-    `confirm_meal`);
-  - non-positive recipe-ingredient quantities, nutrition base quantities, and FEFO
-    `quantity_needed`; negative quantity overrides;
-  - quantity overrides keyed by a RecipeIngredient that is not part of the recipe;
-  - FEFO batch lists that mix ingredients;
-  - a `datetime` passed as `as_of` to the nutrition-state functions.
-- `app/persistence/models.py` registers a SQLAlchemy `before_flush` hook that rejects saving a
-  Recipe with no ingredients: a new empty recipe, emptying a saved recipe, or deleting its last
-  ingredient. Persistence never imports from `app/domain/`.
-
-Open decisions, to settle when their slice starts: the "expiring soon" threshold (2), whole recipe
-vs. per-serving macro fit (3), the score for a recipe with no ratings (4).
+**After this milestone:** the developer adds Codex to the CI pipeline as an additional review
+layer. Do not start another milestone when slice 5 lands; stop at that point.
 
 Until a component's slice lands, `combine_scores` leaves it out and rescales the remaining default
 weights to sum to 1.
@@ -60,6 +48,8 @@ Schema details beyond the core domain rules:
 - `MealLog.idempotency_key`: nullable, unique UUID. Present in the schema but not yet used by any
   domain logic.
 - `MealFeedback`: one 1–5 rating per MealLog, enforced by a unique foreign key.
+- A SQLAlchemy `before_flush` hook in `models.py` rejects saving a Recipe with no ingredients: a
+  new empty recipe, emptying a saved recipe, or deleting its last ingredient.
 
 ### Domain logic (`app/domain/`)
 
@@ -91,21 +81,58 @@ Implementation behavior worth knowing:
   - Ingredient roles (PRIMARY/SUPPORTING/OPTIONAL) do not affect confirmation; every ingredient is
     consumed.
 
+### Recommendations (`app/domain/`)
+
+| Module | Entry point |
+|---|---|
+| `availability.py` | `assess_recipe_availability(recipe, inventory_totals)` |
+| `freshness.py` | `assess_recipe_freshness(recipe, batches_by_ingredient, as_of)` |
+| `recommendations.py` | `recommend_recipes(recipes, batches, as_of)`, `combine_scores(scores)` |
+
+- `recommend_recipes` drops ineligible recipes, scores the rest, and returns `Recommendation`s
+  (recipe, combined score, availability details, freshness details) highest score first.
+- Each `Recommendation.freshness.expired_batches` lists batches past their use-by date, as
+  warnings.
+
+### Input validation
+
+- `app/errors.py` defines `InvalidInputError(ValueError)`, raised by all input validation, in
+  both layers.
+- `app/domain/validation.py` holds the domain input validators; each domain function calls the
+  ones it needs at its top. They reject:
+  - a recipe with no ingredients;
+  - non-positive recipe-ingredient quantities, nutrition base quantities, and FEFO
+    `quantity_needed`; negative quantity overrides;
+  - quantity overrides keyed by a RecipeIngredient that is not part of the recipe;
+  - FEFO batch lists that mix ingredients;
+  - a `datetime` passed as `as_of` (nutrition state, freshness, recommendations).
+- Persistence never imports from `app/domain/`.
+
 ### Tests
 
-82 tests across `tests/test_models.py` and one test module per domain module. Run with:
+101 tests across `tests/test_models.py` and one test module per domain module. Run with:
 
 ```bash
+.venv/bin/ruff check .
 .venv/bin/python -m pytest tests/ -v
 ```
+
+### CI
+
+- `.github/workflows/ci.yml` runs `ruff check .` and `pytest` on Python 3.11 and 3.12 for every
+  pull request and every push to `main`.
+- Ruff is pinned (`ruff==0.16.10`) and configured in `pyproject.toml`.
+- `main` is protected: changes merge only through a pull request with both CI checks passing; no
+  approval is required, and the admin can bypass in an emergency.
 
 ## Intentionally Unimplemented
 
 - FastAPI / API layer
-- Recommendation engine (availability, freshness, macro fit, enjoyment scoring)
+- Recommendation macro fit, enjoyment, and recent-frequency display (slices 3–5)
 - Nutrition-data API integration
 - Claude API integration
 - Use of `MealLog.idempotency_key` in meal confirmation
 - Grocery addition and manual inventory correction operations
 - Alembic migrations
 - Docker
+- Agent (Codex) review in CI

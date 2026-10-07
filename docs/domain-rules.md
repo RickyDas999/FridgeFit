@@ -117,9 +117,16 @@ Freshness:
 
 - Freshness prioritizes the most urgent ingredient and may receive a small bonus for additional
   expiring-soon ingredients.
+- An ingredient is **expiring soon** when its use-by date is within 2 days. That is when using it
+  should become a priority.
+- An ingredient's urgency comes from its earliest-dated batch that still has stock and is not
+  past its use-by date. A batch is usable through its use-by date; it is expired only after it.
+- The freshness score (0–1) starts from the most urgent ingredient: 1.0 when it must be used
+  today, falling linearly to 0 at 7 days out. Each other ingredient expiring soon adds 0.1. The
+  score is capped at 1.0. A recipe with no dated ingredients scores 0.
 - Past-entered use-by dates should be surfaced as warnings, but FridgeFit must not make the user's
   food-safety decision. Batches past their use-by date therefore still count as available
-  inventory.
+  inventory, and never raise a recipe's freshness score.
 
 Macro priorities:
 
