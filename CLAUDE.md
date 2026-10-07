@@ -20,6 +20,31 @@ This is NOT a code-generation exercise.
 
 ---
 
+## Sources of Truth
+
+This file describes **how Claude Code should work** in this repository. System facts live in `docs/`:
+
+| Document | Contains |
+|---|---|
+| `docs/architecture.md` | Durable architecture decisions: stack, infrastructure limits, external boundaries, code layout |
+| `docs/domain-rules.md` | Durable product/domain invariants |
+| `docs/current-milestone.md` | What is implemented now, what is unimplemented, and which milestone is active |
+
+Before making architecture or domain decisions, read:
+- `docs/architecture.md`
+- `docs/domain-rules.md`
+
+Before beginning implementation, read:
+- `docs/current-milestone.md`
+
+Only implement work that belongs to a milestone the developer has explicitly approved.
+
+If these documents contradict each other or the code, point out the contradiction to the developer rather than guessing which is correct.
+
+Do not change architecture decisions or domain rules without the developer's explicit approval.
+
+---
+
 ## Development Philosophy
 
 Work in very small vertical or conceptual slices.
@@ -37,6 +62,8 @@ Do not implement functionality that has not been explicitly requested in the cur
 Do not anticipate future checkpoints by adding abstractions, services, interfaces, files, endpoints, or dependencies "for later."
 
 Prefer the simplest implementation that satisfies the current requirement.
+
+Do not redesign or replace the persistence layer unless a current requirement exposes a concrete problem.
 
 ---
 
@@ -176,228 +203,6 @@ Run the relevant tests before reporting completion.
 
 ---
 
-## Architecture Principles
-
-FridgeFit is currently a single-user application.
-
-Current expected workload:
-- approximately 1 daily active user;
-- low concurrency;
-- small dataset.
-
-Therefore:
-
-- SQLite is the V1 relational database.
-- Concurrent writes are not currently a meaningful concern.
-- PostgreSQL is a possible future migration if multi-user deployment or concurrency justifies it.
-- Do not add Redis.
-- Do not add message queues.
-- Do not add microservices.
-- Do not add distributed infrastructure unless a future requirement actually needs it.
-
-FridgeFit should initially be a modular monolith.
-
-External services are allowed when they solve a real problem.
-
-Expected future external boundaries:
-- nutrition-data API;
-- Claude API for optional meal generation.
-
-Do not implement either until explicitly requested.
-
----
-
-## Important Domain Decisions
-
-These decisions have already been made.
-
-### Ingredient
-
-An Ingredient represents canonical food/nutrition reference data.
-
-It is separate from physical kitchen inventory.
-
-Nutrition data will eventually include:
-- calories;
-- protein;
-- carbohydrates;
-- fat;
-- canonical unit;
-- nutrition base quantity;
-- source URL;
-- nutrition updated timestamp.
-
-Canonical units:
-- grams;
-- milliliters;
-- count.
-
-Nutrition data is retrieved once and persisted.
-
----
-
-### Inventory
-
-Inventory is represented by separate purchase batches.
-
-One Ingredient may have many InventoryBatch records.
-
-A batch preserves:
-- initial quantity;
-- remaining quantity;
-- purchase date;
-- optional use-by date;
-- optional depleted timestamp.
-
-Separate batches exist so expiration/freshness information is not lost.
-
-Normal inventory views will later aggregate batches by Ingredient.
-
-Inventory consumption will eventually follow FEFO:
-- first-expire, first-out;
-- fall back to oldest purchase date when needed.
-
-Manual inventory corrections must NOT create MealLogs or change nutrition consumption.
-
-Inventory state and personal nutrition consumption are separate concepts.
-
----
-
-### Recipes
-
-Recipe metadata is relational.
-
-Recipe instructions may use JSON.
-
-Recipe ingredients are normalized relationally because the system must:
-- compare them against inventory;
-- calculate nutrition;
-- calculate missing ingredients.
-
-Recipe macros are NOT stored.
-
-Recipe macros are derived from:
-- RecipeIngredient quantities;
-- Ingredient nutrition.
-
-RecipeIngredient will eventually classify ingredients as:
-- PRIMARY;
-- SUPPORTING;
-- OPTIONAL.
-
-Recipes may save a source URL.
-
----
-
-### Meal History
-
-MealLog represents a historical consumption event.
-
-MealLog stores an immutable snapshot of:
-- calories;
-- protein;
-- carbohydrates;
-- fat.
-
-Historical meal macros must not change later if Ingredient nutrition data changes.
-
-MealLogIngredient stores:
-- the Ingredient;
-- the actual quantity used.
-
-MealLogIngredient exists for ingredient-level traceability.
-
-Manual macro-only meals may create a MealLog without MealLogIngredients.
-
----
-
-### Nutrition Goals
-
-Nutrition goals are historically preserved using an effective date.
-
-Remaining macros are derived:
-
-remaining = applicable goal - consumed MealLogs
-
-Remaining values may become negative when a target has been exceeded.
-
-Changing inventory must never automatically change nutrition goals or consumption.
-
----
-
-### Recommendations
-
-Primary question:
-
-> What can I make right now?
-
-Current ranking philosophy:
-
-1. Availability
-2. Freshness
-3. Macro fit
-4. Enjoyment
-
-Meals missing more than one required ingredient are excluded.
-
-A meal missing exactly one ingredient may still be recommended.
-
-Ingredient importance will use:
-- PRIMARY;
-- SUPPORTING;
-- OPTIONAL.
-
-Missing-ingredient importance affects availability score.
-
-Freshness prioritizes the most urgent ingredient and may receive a small bonus for additional expiring-soon ingredients.
-
-Past-entered use-by dates should be surfaced as warnings, but FridgeFit must not make the user's food-safety decision.
-
-Macro priorities:
-1. Stay under calorie target.
-2. Hit protein target; moderate excess protein is acceptable.
-3. Stay under fat target.
-4. Stay under carbohydrate target while still encouraging adequate carbohydrates.
-
-Enjoyment uses a 1–5 rating scale.
-
-Meal repetition/frequency does NOT reduce recommendation score in V1.
-
-Recent frequency may be shown informationally.
-
-Ranking weights will eventually be configurable per recommendation request.
-
----
-
-### AI
-
-Claude will eventually generate optional candidate meals.
-
-AI generation is explicitly user-triggered.
-
-Saved meals should work without Claude.
-
-AI suggestions remain ephemeral unless the user explicitly saves them.
-
-For ephemeral AI candidates, Claude may provide estimated:
-- macros;
-- preparation time;
-- ingredients.
-
-These estimates must be identified as estimates.
-
-When an AI recipe is saved, ingredients will later be normalized and trusted macros recalculated deterministically.
-
-Claude does NOT own:
-- persisted nutrition truth;
-- inventory calculations;
-- freshness calculations;
-- final deterministic ranking logic.
-
-Do not create multi-agent or A2A architecture unless a future requirement genuinely requires it.
-
----
-
 ## Code Quality
 
 Prefer:
@@ -450,109 +255,6 @@ The project should remain small enough that the developer can comfortably naviga
 
 ---
 
-## Current Status
-
-The persistence foundation is implemented and committed.
-
-Current stack:
-- Python 3.11+
-- SQLAlchemy 2.x
-- SQLite
-- pytest
-
-Implemented persistence models:
-- Ingredient
-- InventoryBatch
-- Recipe
-- RecipeIngredient
-- MealLog
-- MealLogIngredient
-- NutritionGoal
-- MealFeedback
-
-Important implemented persistence behavior:
-- Ingredient stores canonical nutrition reference data.
-- Inventory uses separate purchase batches.
-- Recipe macros are not stored.
-- MealLog macros are historical snapshots.
-- MealLog may optionally reference the Recipe it came from.
-- MealLogIngredient preserves actual ingredient quantities used.
-- NutritionGoal preserves historical goals using effective dates.
-- MealFeedback records a 1–5 rating for an individual MealLog.
-- SQLite foreign-key enforcement is enabled for every connection.
-- Recipe instructions use a JSON column.
-- MealLog supports a nullable unique idempotency key for future confirmation logic.
-
-The model test suite is passing.
-
-Do not redesign or replace the persistence layer unless a current requirement exposes a concrete problem.
-
-The following remain intentionally unimplemented:
-- FastAPI/API layer
-- recommendation engine
-- nutrition-data API integration
-- Claude API integration
-- FEFO inventory consumption
-- meal-confirmation transaction/business logic
-- remaining-macro calculation
-- recipe macro calculation
-- inventory aggregation
-- Alembic migrations
-- Docker
-
----
-
-## Current Milestone — Core Deterministic Domain Logic
-
-The next milestone is to implement FridgeFit's deterministic business logic before adding FastAPI or external services.
-
-The milestone should be developed as multiple small, independently reviewable slices.
-
-Planned slice order:
-
-1. Recipe macro calculation
-2. Current nutrition-state calculation
-3. Inventory aggregation
-4. FEFO inventory consumption
-5. Atomic meal confirmation
-
-Do not implement the entire milestone at once.
-
-Each slice should be small enough for one manual Git commit and should include focused tests.
-
-### Slice 1 — Recipe Macro Calculation
-
-This is the next approved implementation slice.
-
-Goal:
-
-Given a Recipe with RecipeIngredients and their referenced Ingredient nutrition data, calculate total recipe macros deterministically.
-
-Use:
-- RecipeIngredient.quantity
-- Ingredient.nutrition_base_quantity
-- Ingredient calories/protein/carbs/fat per base unit
-
-Do not persist calculated Recipe macros.
-
-Do not modify the database schema unless a real blocker is discovered.
-
-Do not implement:
-- recommendation scoring
-- freshness scoring
-- inventory availability
-- FEFO
-- meal confirmation
-- remaining nutrition goals
-- FastAPI endpoints
-- external API calls
-
-Prefer pure/testable domain logic that does not require HTTP or external services.
-
-Before choosing where this logic should live, inspect the current project structure. If introducing a new module is justified because this is now business logic rather than persistence logic, explain the proposed module briefly before implementing it.
-
-The developer should personally run and inspect the relevant tests before this slice is considered complete.
-
 ## Development Workflow
 
 Claude Code is the primary implementation and debugging partner for this repository.
@@ -589,6 +291,8 @@ Escalate a decision to the developer when it materially affects:
 Routine coding, testing, debugging, and small refactors should be handled directly in this repository.
 
 Prefer teaching through the actual code and failing tests rather than long theoretical explanations.
+
+---
 
 ## Developer Participation
 
