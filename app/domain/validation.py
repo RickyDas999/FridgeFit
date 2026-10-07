@@ -6,14 +6,20 @@ from app.persistence.models import InventoryBatch, Recipe
 
 
 def validate_recipe(recipe: Recipe) -> None:
-    """Check that a recipe has ingredients and that every ingredient quantity is positive.
+    """Check that a recipe has positive servings, ingredients, and positive ingredient quantities.
 
     Args:
         recipe: The recipe to check. Its ``recipe_ingredients`` must be loadable.
 
     Raises:
-        InvalidInputError: If the recipe has no ingredients or any quantity is not positive.
+        InvalidInputError: If servings is not positive, the recipe has no ingredients, or any
+            ingredient quantity is not positive.
     """
+    if recipe.servings <= 0:
+        raise InvalidInputError(
+            f"Recipe {recipe.name!r} must have a positive number of servings, "
+            f"got {recipe.servings}"
+        )
     if not recipe.recipe_ingredients:
         raise InvalidInputError(f"Recipe {recipe.name!r} has no ingredients")
     for recipe_ingredient in recipe.recipe_ingredients:

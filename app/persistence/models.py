@@ -60,6 +60,9 @@ class Recipe(Base):
     """A recipe's metadata and instructions. Macros are derived, not stored."""
 
     __tablename__ = "recipes"
+    __table_args__ = (
+        CheckConstraint("servings > 0", name="ck_recipe_servings_positive"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String)

@@ -55,6 +55,7 @@ For architecture, see `docs/architecture.md`. For what is currently built, see
 - A recipe must have at least one ingredient. A recipe with no ingredients is invalid: it must
   never be persisted, and domain logic rejects it with an error rather than scoring it.
 - A valid recipe lists each ingredient at most once.
+- A recipe makes a positive number of servings.
 
 ## Meal History
 
@@ -134,6 +135,20 @@ Macro priorities:
 2. Hit protein target; moderate excess protein is acceptable.
 3. Stay under fat target.
 4. Stay under carbohydrate target while still encouraging adequate carbohydrates.
+
+Macro fit compares **one serving** of a recipe (its total macros divided by its servings) with
+what is left of today's goal. With *s* the serving's amount and *r* the amount remaining:
+
+- Calories and fat score 1.0 when *s* fits within *r*, otherwise the share that fits, *r* / *s*
+  (0 once the target is used up).
+- Protein scores its coverage, *s* / *r*, capped at 1.0. Excess up to 1.5× *r* is not penalized;
+  beyond that the score falls linearly to 0 at 3× *r*. Protein scores 1.0 once today's target is
+  met.
+- Carbohydrates score 1.0 from 25% to 100% of *r*. Below 25% the score falls linearly to 0.5 at
+  zero carbohydrates; above *r* they score like calories.
+- The four scores combine with weights calories 0.4, protein 0.3, fat 0.2, carbohydrates 0.1.
+- When no nutrition goal is in effect yet, macro fit is left out of the ranking and the other
+  component weights rescale.
 
 Enjoyment and repetition:
 

@@ -223,6 +223,20 @@ def test_negative_recipe_ingredient_quantity_rejected(session):
         session.commit()
 
 
+def test_non_positive_servings_rejected(session):
+    """The database rejects a Recipe with zero servings."""
+    session.add(make_recipe(
+        servings=0,
+        recipe_ingredients=[
+            RecipeIngredient(
+                ingredient=make_ingredient(), quantity=200, role=IngredientRole.PRIMARY
+            ),
+        ],
+    ))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
 def test_recipe_without_ingredients_cannot_be_saved(session):
     """Saving a new Recipe with no ingredients is rejected before anything is written."""
     session.add(make_recipe())
