@@ -3,12 +3,17 @@ from datetime import date
 from typing import NamedTuple, Sequence
 
 from app.domain.availability import RecipeAvailability, assess_recipe_availability
+from app.domain.enjoyment import (
+    RecipeEnjoyment,
+    assess_recipe_enjoyment,
+    group_ratings_by_recipe,
+)
 from app.domain.freshness import RecipeFreshness, assess_recipe_freshness
 from app.domain.inventory_aggregation import aggregate_inventory_by_ingredient
 from app.domain.macro_fit import MacroFit, assess_macro_fit
 from app.domain.nutrition_state import RemainingMacros
 from app.domain.validation import validate_calendar_date
-from app.persistence.models import InventoryBatch, Recipe
+from app.persistence.models import InventoryBatch, MealFeedback, Recipe
 
 DEFAULT_WEIGHTS = {
     "availability": 0.4,
@@ -26,6 +31,7 @@ class Recommendation(NamedTuple):
     availability: RecipeAvailability
     freshness: RecipeFreshness
     macro_fit: MacroFit | None
+    enjoyment: RecipeEnjoyment
 
 
 def combine_scores(scores: dict[str, float]) -> float:
@@ -49,6 +55,7 @@ def recommend_recipes(
     batches: Sequence[InventoryBatch],
     as_of: date,
     remaining_macros: RemainingMacros | None,
+    meal_feedback: Sequence[MealFeedback],
 ) -> list[Recommendation]:
     """Rank recipes by how well they can be made on a given date.
 
@@ -61,14 +68,18 @@ def recommend_recipes(
         remaining_macros: Today's remaining macros, as returned by
             ``calculate_remaining_macros``. Pass None when no nutrition goal is in effect yet;
             macro fit is then left out of the ranking.
+        meal_feedback: The user's meal ratings. Each one's ``meal_log`` must be loadable. Pass
+            an empty sequence when nothing has been rated yet.
 
     Returns:
         Eligible recipes as Recommendations, highest score first.
 
     Raises:
-        InvalidInputError: If ``as_of`` is not a calendar date or a recipe is invalid.
+        InvalidInputError: If ``as_of`` is not a calendar date, a recipe is invalid, or a rating
+            is outside 1-5.
     """
     validate_calendar_date(as_of)
+    ratings_by_recipe = group_ratings_by_recipe(meal_feedback)
 
     inventory_totals = aggregate_inventory_by_ingredient(batches)
     batches_by_ingredient = defaultdict(list)
@@ -88,8 +99,13 @@ def recommend_recipes(
             macro_fit = assess_macro_fit(recipe, remaining_macros)
             scores["macro_fit"] = macro_fit.score
 
+        enjoyment = assess_recipe_enjoyment(recipe, ratings_by_recipe)
+        scores["enjoyment"] = enjoyment.score
+
         recommendations.append(
-            Recommendation(recipe, combine_scores(scores), availability, freshness, macro_fit)
+            Recommendation(
+                recipe, combine_scores(scores), availability, freshness, macro_fit, enjoyment
+            )
         )
 
     return sorted(recommendations, key=lambda r: r.score, reverse=True)

@@ -20,11 +20,9 @@ ranker, so each slice ends with runnable recommendations.
 | 1 | Availability, eligibility, and a weighted-sum ranker (`availability.py`, `recommendations.py`) | Done |
 | — | Input validation (`app/errors.py`, `app/domain/validation.py`, save-time recipe check) | Done |
 | 2 | Freshness score and expired-batch warnings (`freshness.py`) | Done |
-| 3 | Macro fit score (`macro_fit.py`) | Implemented, not yet committed |
-| 4 | Enjoyment score | Not started |
+| 3 | Macro fit score (`macro_fit.py`) | Done |
+| 4 | Enjoyment score (`enjoyment.py`) | Implemented, not yet committed |
 | 5 | Recent frequency shown informationally | Not started |
-
-Open decision, to settle when its slice starts: the score for a recipe with no ratings (4).
 
 **After this milestone:** the developer adds Codex to the CI pipeline as an additional review
 layer. Do not start another milestone when slice 5 lands; stop at that point.
@@ -88,12 +86,16 @@ Implementation behavior worth knowing:
 | `availability.py` | `assess_recipe_availability(recipe, inventory_totals)` |
 | `freshness.py` | `assess_recipe_freshness(recipe, batches_by_ingredient, as_of)` |
 | `macro_fit.py` | `assess_macro_fit(recipe, remaining)` |
-| `recommendations.py` | `recommend_recipes(recipes, batches, as_of, remaining_macros)`, `combine_scores(scores)` |
+| `enjoyment.py` | `group_ratings_by_recipe(meal_feedback)`, `assess_recipe_enjoyment(recipe, ratings_by_recipe)` |
+| `recommendations.py` | `recommend_recipes(recipes, batches, as_of, remaining_macros, meal_feedback)`, `combine_scores(scores)` |
 
 - `recommend_recipes` drops ineligible recipes, scores the rest, and returns `Recommendation`s
-  (recipe, combined score, availability, freshness, and macro-fit details) highest score first.
+  (recipe, combined score, availability, freshness, macro-fit, and enjoyment details) highest
+  score first.
 - `remaining_macros` is required but may be None (no nutrition goal in effect yet). Macro fit is
   then skipped and `Recommendation.macro_fit` is None.
+- `meal_feedback` is required; pass an empty sequence when nothing has been rated. Enjoyment is
+  always scored (0.5 when unrated), so with a nutrition goal all four weights apply unscaled.
 - Each `Recommendation.freshness.expired_batches` lists batches past their use-by date, as
   warnings.
 
@@ -108,12 +110,13 @@ Implementation behavior worth knowing:
     `quantity_needed`; negative quantity overrides;
   - quantity overrides keyed by a RecipeIngredient that is not part of the recipe;
   - FEFO batch lists that mix ingredients;
-  - a `datetime` passed as `as_of` (nutrition state, freshness, recommendations).
+  - a `datetime` passed as `as_of` (nutrition state, freshness, recommendations);
+  - ratings that are not whole numbers from 1 to 5.
 - Persistence never imports from `app/domain/`.
 
 ### Tests
 
-129 tests across `tests/test_models.py` and one test module per domain module. Run with:
+142 tests across `tests/test_models.py` and one test module per domain module. Run with:
 
 ```bash
 .venv/bin/ruff check .
@@ -131,7 +134,7 @@ Implementation behavior worth knowing:
 ## Intentionally Unimplemented
 
 - FastAPI / API layer
-- Recommendation enjoyment score and recent-frequency display (slices 4–5)
+- Recent-frequency display in recommendations (slice 5)
 - Nutrition-data API integration
 - Claude API integration
 - Use of `MealLog.idempotency_key` in meal confirmation
