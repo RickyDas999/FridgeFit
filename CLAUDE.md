@@ -414,10 +414,29 @@ Avoid:
 - unnecessary inheritance;
 - giant utility modules;
 - dependency sprawl;
-- magic behavior;
-- over-commenting obvious code.
+- magic behavior.
 
-Comments should explain WHY when the reason is not obvious.
+---
+
+## Documentation Style
+
+Follow PEP 8 formatting throughout (naming, whitespace, blank lines between top-level definitions, line length).
+
+Maximum line length is 99 characters — the team-agreed extension PEP 8 explicitly permits over its 79-character default. Check with:
+
+```bash
+.venv/bin/python -m pycodestyle --max-line-length=99 app tests
+```
+
+Every function and class gets a docstring, enterprise-style, regardless of how obvious the function appears:
+- one-line summary of what it does;
+- `Args:` describing each parameter, when the function takes any;
+- `Returns:` describing the return value, when the function returns something other than `None`;
+- `Raises:` when the function can raise an intentional exception.
+
+Test functions get a concise one-line docstring describing the behavior under test, without a full Args/Returns block (the `session` fixture parameter and lack of a return value don't need documenting).
+
+Inline comments should still explain WHY when the reason is not obvious — docstrings cover WHAT/HOW; this does not change.
 
 ---
 

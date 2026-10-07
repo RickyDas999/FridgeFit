@@ -13,7 +13,9 @@ class Ingredient(Base):
 
     __tablename__ = "ingredients"
     __table_args__ = (
-        CheckConstraint("nutrition_base_quantity > 0", name="ck_ingredient_base_quantity_positive"),
+        CheckConstraint(
+            "nutrition_base_quantity > 0", name="ck_ingredient_base_quantity_positive"
+        ),
         CheckConstraint("calories_per_base_unit >= 0", name="ck_ingredient_calories_nonneg"),
         CheckConstraint("protein_per_base_unit >= 0", name="ck_ingredient_protein_nonneg"),
         CheckConstraint("carbs_per_base_unit >= 0", name="ck_ingredient_carbs_nonneg"),
@@ -68,6 +70,7 @@ class Recipe(Base):
     recipe_ingredients: Mapped[list["RecipeIngredient"]] = relationship(back_populates="recipe")
     meal_logs: Mapped[list["MealLog"]] = relationship(back_populates="recipe")
 
+
 class RecipeIngredient(Base):
     """One ingredient's role and quantity within a recipe."""
 
@@ -111,7 +114,9 @@ class MealLog(Base):
     consumed_at: Mapped[datetime]
     idempotency_key: Mapped[uuid.UUID | None] = mapped_column(unique=True)
 
-    meal_log_ingredients: Mapped[list["MealLogIngredient"]] = relationship(back_populates="meal_log")
+    meal_log_ingredients: Mapped[list["MealLogIngredient"]] = relationship(
+        back_populates="meal_log"
+    )
     recipe: Mapped["Recipe"] = relationship(back_populates="meal_logs")
 
 

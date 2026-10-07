@@ -5,13 +5,35 @@ from app.persistence.models import InventoryBatch
 
 
 class BatchConsumption(NamedTuple):
+    """A planned draw of a specific quantity from a single inventory batch."""
+
     batch: InventoryBatch
     quantity: float
 
 
-def plan_fefo_consumption(batches: Sequence[InventoryBatch], quantity_needed: float) -> list[BatchConsumption]:
+def plan_fefo_consumption(
+    batches: Sequence[InventoryBatch], quantity_needed: float
+) -> list[BatchConsumption]:
+    """Plan which batches to consume from using first-expire, first-out ordering.
+
+    Batches are ordered by ``use_by_date`` ascending, then by ``purchased_at``
+    ascending as a tiebreaker. This function only plans; it never mutates
+    the batches.
+
+    Args:
+        batches: Candidate batches for a single ingredient. Batches with no
+            remaining quantity are skipped.
+        quantity_needed: Total quantity to draw.
+
+    Returns:
+        Planned draws in consumption order. If inventory is insufficient, the
+        plan covers only what is available; callers detect the shortfall by
+        comparing the summed quantities against ``quantity_needed``.
+    """
     ordered = sorted(
         (batch for batch in batches if batch.quantity_remaining > 0),
+        # date.max stands in for a missing use_by_date: undated batches sort
+        # last, and None is never compared directly (which would raise).
         key=lambda batch: (batch.use_by_date or date.max, batch.purchased_at),
     )
 

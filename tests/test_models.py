@@ -17,6 +17,14 @@ from app.persistence.models import (
 
 
 def make_ingredient(**overrides):
+    """Build an unsaved Ingredient with chicken-breast defaults.
+
+    Args:
+        **overrides: Ingredient field values that replace the defaults.
+
+    Returns:
+        A new, unpersisted Ingredient.
+    """
     defaults = dict(
         name="Chicken Breast",
         canonical_unit=CanonicalUnit.GRAM,
@@ -32,6 +40,7 @@ def make_ingredient(**overrides):
 
 
 def test_ingredient_persists_and_retrieves(session):
+    """An Ingredient round-trips through the database with its fields intact."""
     session.add(make_ingredient())
     session.commit()
 
@@ -41,6 +50,7 @@ def test_ingredient_persists_and_retrieves(session):
 
 
 def test_ingredient_has_many_batches(session):
+    """One Ingredient can own multiple InventoryBatch rows."""
     ingredient = make_ingredient()
     session.add(ingredient)
     session.commit()
@@ -66,6 +76,7 @@ def test_ingredient_has_many_batches(session):
 
 
 def test_batches_do_not_duplicate_nutrition_data(session):
+    """Batches reference Ingredient nutrition instead of copying it."""
     ingredient = make_ingredient()
     session.add(ingredient)
     session.commit()
@@ -84,6 +95,7 @@ def test_batches_do_not_duplicate_nutrition_data(session):
 
 
 def test_use_by_date_is_nullable(session):
+    """An InventoryBatch can be saved without a use-by date."""
     ingredient = make_ingredient()
     session.add(ingredient)
     session.commit()
@@ -102,6 +114,7 @@ def test_use_by_date_is_nullable(session):
 
 
 def test_negative_quantity_remaining_rejected(session):
+    """The database rejects a batch with negative remaining quantity."""
     ingredient = make_ingredient()
     session.add(ingredient)
     session.commit()
@@ -117,12 +130,21 @@ def test_negative_quantity_remaining_rejected(session):
 
 
 def test_negative_calories_rejected(session):
+    """The database rejects an Ingredient with negative calories."""
     session.add(make_ingredient(calories_per_base_unit=-1))
     with pytest.raises(IntegrityError):
         session.commit()
 
 
 def make_recipe(**overrides):
+    """Build an unsaved Recipe with valid defaults.
+
+    Args:
+        **overrides: Recipe field values that replace the defaults.
+
+    Returns:
+        A new, unpersisted Recipe.
+    """
     defaults = dict(
         name="Grilled Chicken Bowl",
         instructions=["Season chicken", "Grill 6 minutes per side", "Slice and serve"],
@@ -134,6 +156,7 @@ def make_recipe(**overrides):
 
 
 def test_recipe_persists_and_retrieves(session):
+    """A Recipe round-trips with its JSON instructions intact."""
     session.add(make_recipe())
     session.commit()
 
@@ -142,6 +165,7 @@ def test_recipe_persists_and_retrieves(session):
 
 
 def test_recipe_source_url_is_nullable(session):
+    """A Recipe can be saved without a source URL."""
     session.add(make_recipe())
     session.commit()
 
@@ -150,6 +174,7 @@ def test_recipe_source_url_is_nullable(session):
 
 
 def test_recipe_has_many_recipe_ingredients(session):
+    """One Recipe can own multiple RecipeIngredient rows."""
     ingredient = make_ingredient()
     recipe = make_recipe()
     session.add_all([ingredient, recipe])
@@ -176,6 +201,7 @@ def test_recipe_has_many_recipe_ingredients(session):
 
 
 def test_recipe_ingredient_does_not_duplicate_nutrition_data(session):
+    """RecipeIngredient references Ingredient nutrition instead of copying it."""
     ingredient = make_ingredient()
     recipe = make_recipe()
     session.add_all([ingredient, recipe])
@@ -195,6 +221,7 @@ def test_recipe_ingredient_does_not_duplicate_nutrition_data(session):
 
 
 def test_negative_recipe_ingredient_quantity_rejected(session):
+    """The database rejects a RecipeIngredient with negative quantity."""
     ingredient = make_ingredient()
     recipe = make_recipe()
     session.add_all([ingredient, recipe])
@@ -209,7 +236,9 @@ def test_negative_recipe_ingredient_quantity_rejected(session):
     with pytest.raises(IntegrityError):
         session.commit()
 
+
 def test_recipe_ingredient_requires_real_recipe(session):
+    """Foreign-key enforcement rejects a RecipeIngredient pointing at a missing Recipe."""
     ingredient = make_ingredient()
     session.add(ingredient)
     session.commit()
@@ -225,6 +254,14 @@ def test_recipe_ingredient_requires_real_recipe(session):
 
 
 def make_meal_log(**overrides):
+    """Build an unsaved MealLog with valid defaults.
+
+    Args:
+        **overrides: MealLog field values that replace the defaults.
+
+    Returns:
+        A new, unpersisted MealLog.
+    """
     defaults = dict(
         name="Chicken and Rice",
         calories=450,
@@ -238,6 +275,7 @@ def make_meal_log(**overrides):
 
 
 def test_meal_log_persists_and_retrieves(session):
+    """A MealLog round-trips with its macro snapshot intact."""
     session.add(make_meal_log())
     session.commit()
 
@@ -247,6 +285,7 @@ def test_meal_log_persists_and_retrieves(session):
 
 
 def test_meal_log_has_many_meal_log_ingredients(session):
+    """One MealLog can own multiple MealLogIngredient rows."""
     ingredient = make_ingredient()
     meal_log = make_meal_log()
     session.add_all([ingredient, meal_log])
@@ -263,12 +302,15 @@ def test_meal_log_has_many_meal_log_ingredients(session):
 
 
 def test_meal_log_macros_do_not_change_if_ingredient_nutrition_changes(session):
+    """Editing Ingredient nutrition later does not rewrite a MealLog's snapshot."""
     ingredient = make_ingredient()
     meal_log = make_meal_log(calories=450)
     session.add_all([ingredient, meal_log])
     session.commit()
 
-    session.add(MealLogIngredient(meal_log_id=meal_log.id, ingredient_id=ingredient.id, quantity=150))
+    session.add(MealLogIngredient(
+        meal_log_id=meal_log.id, ingredient_id=ingredient.id, quantity=150
+    ))
     session.commit()
 
     ingredient.calories_per_base_unit = 999
@@ -279,11 +321,14 @@ def test_meal_log_macros_do_not_change_if_ingredient_nutrition_changes(session):
 
 
 def test_negative_meal_log_calories_rejected(session):
+    """The database rejects a MealLog with negative calories."""
     session.add(make_meal_log(calories=-1))
     with pytest.raises(IntegrityError):
         session.commit()
 
+
 def test_macro_only_meal_saves_no_meal_ingredients(session):
+    """A manual macro-only MealLog is valid with no MealLogIngredient rows."""
     session.add(make_meal_log())
     session.commit()
     meal_log = session.query(MealLog).one()
@@ -292,6 +337,14 @@ def test_macro_only_meal_saves_no_meal_ingredients(session):
 
 
 def make_nutrition_goal(**overrides):
+    """Build an unsaved NutritionGoal with valid defaults.
+
+    Args:
+        **overrides: NutritionGoal field values that replace the defaults.
+
+    Returns:
+        A new, unpersisted NutritionGoal.
+    """
     defaults = dict(
         calories=2200,
         protein=160,
@@ -304,6 +357,7 @@ def make_nutrition_goal(**overrides):
 
 
 def test_nutrition_goal_persists_and_retrieves(session):
+    """A NutritionGoal round-trips with its targets and effective date intact."""
     session.add(make_nutrition_goal())
     session.commit()
 
@@ -313,6 +367,7 @@ def test_nutrition_goal_persists_and_retrieves(session):
 
 
 def test_changing_goal_preserves_prior_goal_history(session):
+    """A new goal is added alongside, not over, the previous one."""
     session.add(make_nutrition_goal(effective_date=date(2026, 1, 1), calories=2200))
     session.commit()
 
@@ -324,12 +379,14 @@ def test_changing_goal_preserves_prior_goal_history(session):
 
 
 def test_negative_nutrition_goal_calories_rejected(session):
+    """The database rejects a NutritionGoal with negative calories."""
     session.add(make_nutrition_goal(calories=-1))
     with pytest.raises(IntegrityError):
         session.commit()
 
 
 def test_meal_feedback_persists_and_retrieves(session):
+    """MealFeedback round-trips and links back to its MealLog."""
     meal_log = make_meal_log()
     session.add(meal_log)
     session.commit()
@@ -343,6 +400,7 @@ def test_meal_feedback_persists_and_retrieves(session):
 
 
 def test_second_feedback_for_same_meal_log_rejected(session):
+    """The unique constraint allows only one MealFeedback per MealLog."""
     meal_log = make_meal_log()
     session.add(meal_log)
     session.commit()
@@ -354,7 +412,9 @@ def test_second_feedback_for_same_meal_log_rejected(session):
     with pytest.raises(IntegrityError):
         session.commit()
 
+
 def test_higher_than_range_meal_feedback(session):
+    """The database rejects a rating above 5."""
     meal_log = make_meal_log()
     session.add(meal_log)
     session.commit()
@@ -363,7 +423,9 @@ def test_higher_than_range_meal_feedback(session):
     with pytest.raises(IntegrityError):
         session.commit()
 
+
 def test_lower_than_range_meal_feedback(session):
+    """The database rejects a rating below 1."""
     meal_log = make_meal_log()
     session.add(meal_log)
     session.commit()

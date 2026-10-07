@@ -5,6 +5,14 @@ from app.persistence.models import InventoryBatch
 
 
 def make_batch(**overrides):
+    """Build an unsaved InventoryBatch with valid defaults.
+
+    Args:
+        **overrides: InventoryBatch field values that replace the defaults.
+
+    Returns:
+        A new, unpersisted InventoryBatch.
+    """
     defaults = dict(
         ingredient_id=1,
         quantity_initial=500,
@@ -16,6 +24,7 @@ def make_batch(**overrides):
 
 
 def test_single_batch_covers_the_need():
+    """A single sufficient batch covers the whole need in one draw."""
     batch = make_batch(quantity_remaining=500)
 
     plan = plan_fefo_consumption([batch], quantity_needed=200)
@@ -26,6 +35,7 @@ def test_single_batch_covers_the_need():
 
 
 def test_draws_from_next_batch_once_first_is_exhausted():
+    """Consumption spills into the next batch once one is emptied."""
     first = make_batch(quantity_remaining=100, use_by_date=date(2026, 1, 10))
     second = make_batch(quantity_remaining=500, use_by_date=date(2026, 1, 20))
 
@@ -35,8 +45,13 @@ def test_draws_from_next_batch_once_first_is_exhausted():
 
 
 def test_earliest_use_by_date_is_drawn_first_regardless_of_purchase_date():
-    expires_soon = make_batch(purchased_at=datetime(2026, 1, 10), use_by_date=date(2026, 2, 1), quantity_remaining=100)
-    expires_later = make_batch(purchased_at=datetime(2026, 1, 1), use_by_date=date(2026, 3, 1), quantity_remaining=100)
+    """Expiry date outranks purchase date when ordering batches."""
+    expires_soon = make_batch(
+        purchased_at=datetime(2026, 1, 10), use_by_date=date(2026, 2, 1), quantity_remaining=100
+    )
+    expires_later = make_batch(
+        purchased_at=datetime(2026, 1, 1), use_by_date=date(2026, 3, 1), quantity_remaining=100
+    )
 
     plan = plan_fefo_consumption([expires_later, expires_soon], quantity_needed=50)
 
@@ -44,8 +59,13 @@ def test_earliest_use_by_date_is_drawn_first_regardless_of_purchase_date():
 
 
 def test_batches_without_use_by_date_are_drawn_last():
-    no_expiry = make_batch(use_by_date=None, purchased_at=datetime(2026, 1, 1), quantity_remaining=100)
-    has_expiry = make_batch(use_by_date=date(2026, 6, 1), purchased_at=datetime(2026, 5, 1), quantity_remaining=100)
+    """Batches with no use-by date are consumed after dated ones."""
+    no_expiry = make_batch(
+        use_by_date=None, purchased_at=datetime(2026, 1, 1), quantity_remaining=100
+    )
+    has_expiry = make_batch(
+        use_by_date=date(2026, 6, 1), purchased_at=datetime(2026, 5, 1), quantity_remaining=100
+    )
 
     plan = plan_fefo_consumption([no_expiry, has_expiry], quantity_needed=150)
 
@@ -54,6 +74,7 @@ def test_batches_without_use_by_date_are_drawn_last():
 
 
 def test_falls_back_to_oldest_purchase_date_when_no_use_by_date():
+    """Undated batches are ordered oldest purchase first."""
     older = make_batch(use_by_date=None, purchased_at=datetime(2026, 1, 1), quantity_remaining=100)
     newer = make_batch(use_by_date=None, purchased_at=datetime(2026, 3, 1), quantity_remaining=100)
 
@@ -63,6 +84,7 @@ def test_falls_back_to_oldest_purchase_date_when_no_use_by_date():
 
 
 def test_depleted_batches_are_skipped():
+    """Batches with nothing remaining are left out of the plan."""
     depleted = make_batch(quantity_remaining=0, depleted_at=datetime(2026, 1, 5))
     available = make_batch(quantity_remaining=100)
 
@@ -73,6 +95,7 @@ def test_depleted_batches_are_skipped():
 
 
 def test_partial_fulfillment_when_inventory_is_insufficient():
+    """Insufficient inventory yields a partial plan rather than an error."""
     only_batch = make_batch(quantity_remaining=100)
 
     plan = plan_fefo_consumption([only_batch], quantity_needed=300)
