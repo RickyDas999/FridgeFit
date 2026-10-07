@@ -1,7 +1,11 @@
+from collections import defaultdict
+from datetime import date
 from typing import NamedTuple, Sequence
 
 from app.domain.availability import RecipeAvailability, assess_recipe_availability
+from app.domain.freshness import RecipeFreshness, assess_recipe_freshness
 from app.domain.inventory_aggregation import aggregate_inventory_by_ingredient
+from app.domain.validation import validate_calendar_date
 from app.persistence.models import InventoryBatch, Recipe
 
 DEFAULT_WEIGHTS = {
@@ -18,6 +22,7 @@ class Recommendation(NamedTuple):
     recipe: Recipe
     score: float
     availability: RecipeAvailability
+    freshness: RecipeFreshness
 
 
 def combine_scores(scores: dict[str, float]) -> float:
@@ -37,27 +42,40 @@ def combine_scores(scores: dict[str, float]) -> float:
 
 
 def recommend_recipes(
-    recipes: Sequence[Recipe], batches: Sequence[InventoryBatch]
+    recipes: Sequence[Recipe], batches: Sequence[InventoryBatch], as_of: date
 ) -> list[Recommendation]:
-    """Rank recipes by how well they can be made right now.
+    """Rank recipes by how well they can be made on a given date.
 
     Recipes that are ineligible (more than one PRIMARY ingredient missing) are excluded.
 
     Args:
         recipes: Candidate recipes. Their ``recipe_ingredients`` must be loadable.
         batches: Current inventory batches across all ingredients.
+        as_of: The calendar date to recommend for, used to judge freshness.
 
     Returns:
         Eligible recipes as Recommendations, highest score first.
+
+    Raises:
+        InvalidInputError: If ``as_of`` is not a calendar date or a recipe is invalid.
     """
+    validate_calendar_date(as_of)
+
     inventory_totals = aggregate_inventory_by_ingredient(batches)
+    batches_by_ingredient = defaultdict(list)
+    for batch in batches:
+        batches_by_ingredient[batch.ingredient_id].append(batch)
 
     recommendations = []
     for recipe in recipes:
         availability = assess_recipe_availability(recipe, inventory_totals)
         if not availability.is_eligible:
             continue
-        score = combine_scores({"availability": availability.score})
-        recommendations.append(Recommendation(recipe, score, availability))
+        freshness = assess_recipe_freshness(recipe, batches_by_ingredient, as_of)
+        score = combine_scores({
+            "availability": availability.score,
+            "freshness": freshness.score,
+        })
+        recommendations.append(Recommendation(recipe, score, availability, freshness))
 
     return sorted(recommendations, key=lambda r: r.score, reverse=True)
