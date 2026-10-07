@@ -1,5 +1,10 @@
 from typing import NamedTuple
 
+from app.domain.validation import (
+    validate_nutrition_base_quantities,
+    validate_quantity_overrides,
+    validate_recipe,
+)
 from app.persistence.models import Recipe
 
 
@@ -31,8 +36,16 @@ def calculate_recipe_macros(
 
     Returns:
         The summed macros as a RecipeMacros tuple.
+
+    Raises:
+        InvalidInputError: If the recipe has no ingredients, a non-positive quantity or
+            nutrition base quantity, or an override that is negative or not part of the recipe.
     """
     quantity_overrides = quantity_overrides or {}
+    validate_recipe(recipe)
+    validate_nutrition_base_quantities(recipe)
+    validate_quantity_overrides(recipe, quantity_overrides)
+
     calories = protein = carbs = fat = 0.0
 
     for recipe_ingredient in recipe.recipe_ingredients:

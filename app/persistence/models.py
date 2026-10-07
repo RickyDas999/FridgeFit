@@ -1,9 +1,10 @@
 from datetime import date, datetime
 import uuid
 
-from sqlalchemy import JSON, CheckConstraint, ForeignKey, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import JSON, CheckConstraint, ForeignKey, String, event
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
+from app.errors import InvalidInputError
 from app.persistence.database import Base
 from app.persistence.enums import CanonicalUnit, IngredientRole
 
@@ -173,3 +174,39 @@ class MealFeedback(Base):
     rating: Mapped[int]
 
     meal_log: Mapped["MealLog"] = relationship()
+
+
+@event.listens_for(Session, "before_flush")
+def _reject_recipes_without_ingredients(session, _flush_context, _instances):
+    """Prevent any Recipe from being saved without at least one ingredient.
+
+    A database constraint cannot enforce this: a Recipe row must exist before its
+    RecipeIngredient rows can reference it. Checking pending session state before each flush
+    covers new recipes, recipes whose ingredient list was emptied, and deleting a recipe's
+    last ingredient.
+
+    Args:
+        session: The session about to flush.
+        _flush_context: SQLAlchemy's internal flush context; unused.
+        _instances: Deprecated SQLAlchemy argument; unused.
+
+    Raises:
+        InvalidInputError: If a Recipe would be left with no ingredients.
+    """
+    recipes = {obj for obj in session.new | session.dirty if isinstance(obj, Recipe)}
+    recipes |= {
+        obj.recipe
+        for obj in session.deleted
+        if isinstance(obj, RecipeIngredient) and obj.recipe is not None
+    }
+
+    # Reading recipe_ingredients may lazy-load; autoflush here would re-enter this hook.
+    with session.no_autoflush:
+        for recipe in recipes:
+            if recipe in session.deleted:
+                continue
+            remaining = [ri for ri in recipe.recipe_ingredients if ri not in session.deleted]
+            if not remaining:
+                raise InvalidInputError(
+                    f"Recipe {recipe.name!r} must have at least one ingredient"
+                )

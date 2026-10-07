@@ -3,6 +3,7 @@ from datetime import date, datetime
 import pytest
 
 from app.domain.meal_confirmation import InsufficientInventoryError, confirm_meal
+from app.errors import InvalidInputError
 from app.persistence.enums import CanonicalUnit, IngredientRole
 from app.persistence.models import (
     Ingredient,
@@ -12,6 +13,8 @@ from app.persistence.models import (
     Recipe,
     RecipeIngredient,
 )
+
+CONSUMED_AT = datetime(2026, 1, 15, 12, 0)
 
 
 def make_ingredient(**overrides):
@@ -37,48 +40,71 @@ def make_ingredient(**overrides):
     return Ingredient(**defaults)
 
 
-def make_recipe(**overrides):
-    """Build an unsaved Recipe with valid defaults.
-
-    Args:
-        **overrides: Recipe field values that replace the defaults.
+def make_rice():
+    """Build an unsaved rice Ingredient.
 
     Returns:
-        A new, unpersisted Recipe.
+        A new, unpersisted Ingredient with rice nutrition data.
     """
-    defaults = dict(
+    return make_ingredient(
+        name="Rice",
+        calories_per_base_unit=130,
+        protein_per_base_unit=2.7,
+        carbs_per_base_unit=28,
+        fat_per_base_unit=0.3,
+    )
+
+
+def make_recipe(*ingredients):
+    """Build an unsaved Recipe from ingredient specs.
+
+    Args:
+        *ingredients: ``(ingredient, quantity, role)`` tuples, one per RecipeIngredient.
+
+    Returns:
+        A new, unpersisted Recipe with its RecipeIngredients attached.
+    """
+    return Recipe(
         name="Grilled Chicken Bowl",
         instructions=["Season chicken", "Grill 6 minutes per side"],
         prep_minutes=20,
         servings=2,
+        recipe_ingredients=[
+            RecipeIngredient(ingredient=ingredient, quantity=quantity, role=role)
+            for ingredient, quantity, role in ingredients
+        ],
+    )
+
+
+def make_batch(ingredient, quantity, **overrides):
+    """Build an unsaved InventoryBatch for an ingredient, full to the given quantity.
+
+    Args:
+        ingredient: The Ingredient the batch belongs to.
+        quantity: Initial and remaining quantity of the batch.
+        **overrides: InventoryBatch field values that replace the defaults.
+
+    Returns:
+        A new, unpersisted InventoryBatch.
+    """
+    defaults = dict(
+        ingredient=ingredient,
+        quantity_initial=quantity,
+        quantity_remaining=quantity,
+        purchased_at=datetime(2026, 1, 1),
     )
     defaults.update(overrides)
-    return Recipe(**defaults)
+    return InventoryBatch(**defaults)
 
 
 def test_confirming_a_meal_creates_a_linked_meal_log_with_derived_macros(session):
     """Confirmation creates a recipe-linked MealLog with calculated macros."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 200, IngredientRole.PRIMARY))
+    session.add_all([recipe, make_batch(chicken, 500)])
     session.commit()
 
-    session.add(RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=200,
-        role=IngredientRole.PRIMARY,
-    ))
-    session.add(InventoryBatch(
-        ingredient_id=ingredient.id,
-        quantity_initial=500,
-        quantity_remaining=500,
-        purchased_at=datetime(2026, 1, 1),
-    ))
-    session.commit()
-    session.refresh(recipe)
-
-    meal_log = confirm_meal(session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0))
+    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
 
     assert meal_log.recipe_id == recipe.id
     assert meal_log.calories == pytest.approx(330)
@@ -88,65 +114,30 @@ def test_confirming_a_meal_creates_a_linked_meal_log_with_derived_macros(session
 
 def test_confirming_a_meal_records_meal_log_ingredients(session):
     """Confirmation records a MealLogIngredient per consumed ingredient."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 200, IngredientRole.PRIMARY))
+    session.add_all([recipe, make_batch(chicken, 500)])
     session.commit()
 
-    session.add(RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=200,
-        role=IngredientRole.PRIMARY,
-    ))
-    session.add(InventoryBatch(
-        ingredient_id=ingredient.id,
-        quantity_initial=500,
-        quantity_remaining=500,
-        purchased_at=datetime(2026, 1, 1),
-    ))
-    session.commit()
-    session.refresh(recipe)
-
-    meal_log = confirm_meal(session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0))
+    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
 
     logged = session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).one()
-    assert logged.ingredient_id == ingredient.id
+    assert logged.ingredient_id == chicken.id
     assert logged.quantity == 200
 
 
 def test_confirming_a_meal_consumes_earliest_expiring_batch_first(session):
     """Confirmation consumes inventory in FEFO order and marks emptied batches depleted."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 150, IngredientRole.PRIMARY))
+    expiring_soon = make_batch(chicken, 100, use_by_date=date(2026, 1, 20))
+    expiring_later = make_batch(
+        chicken, 200, purchased_at=datetime(2026, 1, 5), use_by_date=date(2026, 2, 20)
+    )
+    session.add_all([recipe, expiring_soon, expiring_later])
     session.commit()
 
-    session.add(RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=150,
-        role=IngredientRole.PRIMARY,
-    ))
-    expiring_soon = InventoryBatch(
-        ingredient_id=ingredient.id,
-        quantity_initial=100,
-        quantity_remaining=100,
-        purchased_at=datetime(2026, 1, 1),
-        use_by_date=date(2026, 1, 20),
-    )
-    expiring_later = InventoryBatch(
-        ingredient_id=ingredient.id,
-        quantity_initial=200,
-        quantity_remaining=200,
-        purchased_at=datetime(2026, 1, 5),
-        use_by_date=date(2026, 2, 20),
-    )
-    session.add_all([expiring_soon, expiring_later])
-    session.commit()
-    session.refresh(recipe)
-
-    confirm_meal(session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0))
+    confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
 
     assert expiring_soon.quantity_remaining == 0
     assert expiring_soon.depleted_at is not None
@@ -155,29 +146,14 @@ def test_confirming_a_meal_consumes_earliest_expiring_batch_first(session):
 
 def test_insufficient_inventory_raises_and_writes_nothing(session):
     """Without an override, a shortfall raises and leaves the database untouched."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 500, IngredientRole.PRIMARY))
+    batch = make_batch(chicken, 100)
+    session.add_all([recipe, batch])
     session.commit()
-
-    session.add(RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=500,
-        role=IngredientRole.PRIMARY,
-    ))
-    batch = InventoryBatch(
-        ingredient_id=ingredient.id,
-        quantity_initial=100,
-        quantity_remaining=100,
-        purchased_at=datetime(2026, 1, 1),
-    )
-    session.add(batch)
-    session.commit()
-    session.refresh(recipe)
 
     with pytest.raises(InsufficientInventoryError):
-        confirm_meal(session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0))
+        confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
 
     assert session.query(MealLog).count() == 0
     assert batch.quantity_remaining == 100
@@ -185,30 +161,13 @@ def test_insufficient_inventory_raises_and_writes_nothing(session):
 
 def test_explicit_override_consumes_only_available_inventory_and_scales_macros(session):
     """With an override, only available inventory is consumed and macros reflect it."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 220, IngredientRole.PRIMARY))
+    batch = make_batch(chicken, 150)
+    session.add_all([recipe, batch])
     session.commit()
 
-    session.add(RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=220,
-        role=IngredientRole.PRIMARY,
-    ))
-    batch = InventoryBatch(
-        ingredient_id=ingredient.id,
-        quantity_initial=150,
-        quantity_remaining=150,
-        purchased_at=datetime(2026, 1, 1),
-    )
-    session.add(batch)
-    session.commit()
-    session.refresh(recipe)
-
-    meal_log = confirm_meal(
-        session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0), allow_shortfall=True
-    )
+    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT, allow_shortfall=True)
 
     logged = session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).one()
     assert logged.quantity == 150
@@ -220,23 +179,11 @@ def test_explicit_override_consumes_only_available_inventory_and_scales_macros(s
 
 def test_explicit_override_with_zero_available_skips_meal_log_ingredient(session):
     """With an override and no inventory, no MealLogIngredient row is created."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
+    recipe = make_recipe((make_ingredient(), 200, IngredientRole.PRIMARY))
+    session.add(recipe)
     session.commit()
 
-    session.add(RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=200,
-        role=IngredientRole.PRIMARY,
-    ))
-    session.commit()
-    session.refresh(recipe)
-
-    meal_log = confirm_meal(
-        session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0), allow_shortfall=True
-    )
+    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT, allow_shortfall=True)
 
     assert session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).count() == 0
     assert meal_log.calories == pytest.approx(0)
@@ -245,49 +192,14 @@ def test_explicit_override_with_zero_available_skips_meal_log_ingredient(session
 def test_explicit_override_with_mixed_sufficient_and_short_ingredients(session):
     """With an override, each ingredient is logged at the amount actually consumed."""
     chicken = make_ingredient()
-    rice = make_ingredient(
-        name="Rice",
-        calories_per_base_unit=130,
-        protein_per_base_unit=2.7,
-        carbs_per_base_unit=28,
-        fat_per_base_unit=0.3,
+    rice = make_rice()
+    recipe = make_recipe(
+        (chicken, 220, IngredientRole.PRIMARY), (rice, 150, IngredientRole.SUPPORTING)
     )
-    recipe = make_recipe()
-    session.add_all([chicken, rice, recipe])
+    session.add_all([recipe, make_batch(chicken, 150), make_batch(rice, 500)])
     session.commit()
 
-    session.add_all([
-        RecipeIngredient(
-            recipe_id=recipe.id,
-            ingredient_id=chicken.id,
-            quantity=220,
-            role=IngredientRole.PRIMARY,
-        ),
-        RecipeIngredient(
-            recipe_id=recipe.id,
-            ingredient_id=rice.id,
-            quantity=150,
-            role=IngredientRole.SUPPORTING,
-        ),
-        InventoryBatch(
-            ingredient_id=chicken.id,
-            quantity_initial=150,
-            quantity_remaining=150,
-            purchased_at=datetime(2026, 1, 1),
-        ),
-        InventoryBatch(
-            ingredient_id=rice.id,
-            quantity_initial=500,
-            quantity_remaining=500,
-            purchased_at=datetime(2026, 1, 1),
-        ),
-    ])
-    session.commit()
-    session.refresh(recipe)
-
-    meal_log = confirm_meal(
-        session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0), allow_shortfall=True
-    )
+    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT, allow_shortfall=True)
 
     logged = {
         mli.ingredient_id: mli.quantity
@@ -299,50 +211,25 @@ def test_explicit_override_with_mixed_sufficient_and_short_ingredients(session):
 def test_confirming_a_meal_with_multiple_ingredients(session):
     """Confirmation logs every ingredient of a multi-ingredient recipe."""
     chicken = make_ingredient()
-    rice = make_ingredient(
-        name="Rice",
-        calories_per_base_unit=130,
-        protein_per_base_unit=2.7,
-        carbs_per_base_unit=28,
-        fat_per_base_unit=0.3,
+    rice = make_rice()
+    recipe = make_recipe(
+        (chicken, 200, IngredientRole.PRIMARY), (rice, 150, IngredientRole.SUPPORTING)
     )
-    recipe = make_recipe()
-    session.add_all([chicken, rice, recipe])
+    session.add_all([recipe, make_batch(chicken, 500), make_batch(rice, 500)])
     session.commit()
 
-    session.add_all([
-        RecipeIngredient(
-            recipe_id=recipe.id,
-            ingredient_id=chicken.id,
-            quantity=200,
-            role=IngredientRole.PRIMARY,
-        ),
-        RecipeIngredient(
-            recipe_id=recipe.id,
-            ingredient_id=rice.id,
-            quantity=150,
-            role=IngredientRole.SUPPORTING,
-        ),
-        InventoryBatch(
-            ingredient_id=chicken.id,
-            quantity_initial=500,
-            quantity_remaining=500,
-            purchased_at=datetime(2026, 1, 1),
-        ),
-        InventoryBatch(
-            ingredient_id=rice.id,
-            quantity_initial=500,
-            quantity_remaining=500,
-            purchased_at=datetime(2026, 1, 1),
-        ),
-    ])
-    session.commit()
-    session.refresh(recipe)
-
-    meal_log = confirm_meal(session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0))
+    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
 
     logged_ingredient_ids = {
         mli.ingredient_id
         for mli in session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).all()
     }
     assert logged_ingredient_ids == {chicken.id, rice.id}
+
+
+def test_recipe_with_no_ingredients_is_rejected_and_writes_nothing(session):
+    """Confirming a recipe with no ingredients raises before anything is written."""
+    with pytest.raises(InvalidInputError):
+        confirm_meal(session, make_recipe(), consumed_at=CONSUMED_AT)
+
+    assert session.query(MealLog).count() == 0

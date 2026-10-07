@@ -1,5 +1,6 @@
 from typing import NamedTuple
 
+from app.domain.validation import validate_recipe
 from app.persistence.enums import IngredientRole
 from app.persistence.models import Recipe, RecipeIngredient
 
@@ -55,10 +56,9 @@ def assess_recipe_availability(
         Per-ingredient availability, the 0-1 availability score, and eligibility.
 
     Raises:
-        ValueError: If the recipe has no ingredients, which is never a valid recipe.
+        InvalidInputError: If the recipe has no ingredients or a non-positive quantity.
     """
-    if not recipe.recipe_ingredients:
-        raise ValueError(f"Recipe {recipe.name!r} has no ingredients")
+    validate_recipe(recipe)
 
     ingredients = []
     for recipe_ingredient in recipe.recipe_ingredients:

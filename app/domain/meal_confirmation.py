@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.fefo_consumption import plan_fefo_consumption
 from app.domain.recipe_macros import calculate_recipe_macros
+from app.domain.validation import validate_recipe
 from app.persistence.models import MealLog, MealLogIngredient, Recipe
 
 
@@ -53,9 +54,12 @@ def confirm_meal(
         The committed MealLog.
 
     Raises:
+        InvalidInputError: If the recipe has no ingredients or a non-positive quantity.
         InsufficientInventoryError: If any ingredient is short and
             ``allow_shortfall`` is False.
     """
+    validate_recipe(recipe)
+
     consumption_plans = {}
     fulfilled_quantities = {}
     shortfalls = {}

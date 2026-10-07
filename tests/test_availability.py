@@ -1,6 +1,7 @@
 import pytest
 
 from app.domain.availability import assess_recipe_availability
+from app.errors import InvalidInputError
 from app.persistence.enums import IngredientRole
 from app.persistence.models import Recipe, RecipeIngredient
 
@@ -108,5 +109,11 @@ def test_missing_supporting_and_optional_ingredients_never_exclude():
 
 def test_recipe_with_no_ingredients_raises():
     """A recipe with no ingredients is invalid and is rejected rather than scored."""
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidInputError):
         assess_recipe_availability(make_recipe(), {})
+
+
+def test_non_positive_recipe_quantity_is_rejected():
+    """A zero ingredient quantity raises instead of dividing by zero."""
+    with pytest.raises(InvalidInputError):
+        assess_recipe_availability(make_recipe((1, 0, PRIMARY)), {1: 100})

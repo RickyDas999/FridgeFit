@@ -1,6 +1,9 @@
 from datetime import date, datetime
 
+import pytest
+
 from app.domain.fefo_consumption import plan_fefo_consumption
+from app.errors import InvalidInputError
 from app.persistence.models import InventoryBatch
 
 
@@ -103,3 +106,18 @@ def test_partial_fulfillment_when_inventory_is_insufficient():
     assert len(plan) == 1
     assert plan[0].quantity == 100
     assert sum(p.quantity for p in plan) < 300
+
+
+@pytest.mark.parametrize("quantity_needed", [0, -50])
+def test_non_positive_quantity_needed_is_rejected(quantity_needed):
+    """Asking to consume zero or a negative amount raises instead of returning an empty plan."""
+    with pytest.raises(InvalidInputError):
+        plan_fefo_consumption([make_batch()], quantity_needed=quantity_needed)
+
+
+def test_batches_from_different_ingredients_are_rejected():
+    """A batch list mixing ingredients raises."""
+    batches = [make_batch(ingredient_id=1), make_batch(ingredient_id=2)]
+
+    with pytest.raises(InvalidInputError):
+        plan_fefo_consumption(batches, quantity_needed=50)

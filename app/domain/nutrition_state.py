@@ -1,6 +1,7 @@
 from datetime import date
 from typing import NamedTuple, Sequence
 
+from app.domain.validation import validate_calendar_date
 from app.persistence.models import MealLog, NutritionGoal
 
 
@@ -27,7 +28,12 @@ def select_applicable_goal(
 
     Returns:
         The applicable NutritionGoal, or None if no goal is effective yet.
+
+    Raises:
+        InvalidInputError: If ``as_of`` is a datetime rather than a calendar date.
     """
+    validate_calendar_date(as_of)
+
     applicable = [goal for goal in goals if goal.effective_date <= as_of]
     if not applicable:
         return None
@@ -51,8 +57,11 @@ def calculate_remaining_macros(
         The remaining macros as a RemainingMacros tuple. Values may be negative.
 
     Raises:
+        InvalidInputError: If ``as_of`` is a datetime rather than a calendar date.
         ValueError: If no nutrition goal is effective on or before ``as_of``.
     """
+    validate_calendar_date(as_of)
+
     goal = select_applicable_goal(goals, as_of)
     if goal is None:
         raise ValueError(f"No nutrition goal is effective on or before {as_of}")

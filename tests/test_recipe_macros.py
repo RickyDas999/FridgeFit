@@ -2,6 +2,7 @@ from datetime import datetime
 
 import pytest
 
+from app.errors import InvalidInputError
 from app.persistence.enums import CanonicalUnit, IngredientRole
 from app.persistence.models import Ingredient, Recipe, RecipeIngredient
 from app.domain.recipe_macros import calculate_recipe_macros
@@ -51,19 +52,11 @@ def make_recipe(**overrides):
 
 def test_macros_scale_with_quantity_relative_to_base(session):
     """Macros scale linearly with quantity relative to the nutrition base quantity."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
+    recipe = make_recipe(recipe_ingredients=[
+        RecipeIngredient(ingredient=make_ingredient(), quantity=200, role=IngredientRole.PRIMARY),
+    ])
+    session.add(recipe)
     session.commit()
-
-    session.add(RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=200,
-        role=IngredientRole.PRIMARY,
-    ))
-    session.commit()
-    session.refresh(recipe)
 
     macros = calculate_recipe_macros(recipe)
 
@@ -75,7 +68,6 @@ def test_macros_scale_with_quantity_relative_to_base(session):
 
 def test_macros_sum_across_multiple_recipe_ingredients(session):
     """Macros from every RecipeIngredient are summed."""
-    chicken = make_ingredient()
     rice = make_ingredient(
         name="Rice",
         calories_per_base_unit=130,
@@ -83,26 +75,12 @@ def test_macros_sum_across_multiple_recipe_ingredients(session):
         carbs_per_base_unit=28,
         fat_per_base_unit=0.3,
     )
-    recipe = make_recipe()
-    session.add_all([chicken, rice, recipe])
-    session.commit()
-
-    session.add_all([
-        RecipeIngredient(
-            recipe_id=recipe.id,
-            ingredient_id=chicken.id,
-            quantity=200,
-            role=IngredientRole.PRIMARY,
-        ),
-        RecipeIngredient(
-            recipe_id=recipe.id,
-            ingredient_id=rice.id,
-            quantity=150,
-            role=IngredientRole.SUPPORTING,
-        ),
+    recipe = make_recipe(recipe_ingredients=[
+        RecipeIngredient(ingredient=make_ingredient(), quantity=200, role=IngredientRole.PRIMARY),
+        RecipeIngredient(ingredient=rice, quantity=150, role=IngredientRole.SUPPORTING),
     ])
+    session.add(recipe)
     session.commit()
-    session.refresh(recipe)
 
     macros = calculate_recipe_macros(recipe)
 
@@ -112,31 +90,14 @@ def test_macros_sum_across_multiple_recipe_ingredients(session):
     assert macros.fat == pytest.approx(7.2 + 0.45)
 
 
-def test_macros_are_zero_for_recipe_with_no_ingredients(session):
-    """A recipe with no ingredients has zero macros."""
-    recipe = make_recipe()
-    session.add(recipe)
-    session.commit()
-    session.refresh(recipe)
-
-    macros = calculate_recipe_macros(recipe)
-
-    assert macros == (0, 0, 0, 0)
-
-
 def test_quantity_override_scales_macros_for_that_ingredient(session):
     """A quantity override replaces the recipe quantity in the calculation."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
-    session.commit()
-
     recipe_ingredient = RecipeIngredient(
-        recipe_id=recipe.id, ingredient_id=ingredient.id, quantity=200, role=IngredientRole.PRIMARY
+        ingredient=make_ingredient(), quantity=200, role=IngredientRole.PRIMARY
     )
-    session.add(recipe_ingredient)
+    recipe = make_recipe(recipe_ingredients=[recipe_ingredient])
+    session.add(recipe)
     session.commit()
-    session.refresh(recipe)
 
     macros = calculate_recipe_macros(recipe, quantity_overrides={recipe_ingredient.id: 150})
 
@@ -146,20 +107,58 @@ def test_quantity_override_scales_macros_for_that_ingredient(session):
 
 def test_quantity_override_defaults_to_recipe_quantity_when_absent(session):
     """Ingredients missing from the override map use the recipe quantity."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
+    recipe = make_recipe(recipe_ingredients=[
+        RecipeIngredient(ingredient=make_ingredient(), quantity=200, role=IngredientRole.PRIMARY),
+    ])
+    session.add(recipe)
     session.commit()
-
-    session.add(RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=200,
-        role=IngredientRole.PRIMARY,
-    ))
-    session.commit()
-    session.refresh(recipe)
 
     macros = calculate_recipe_macros(recipe, quantity_overrides={})
 
     assert macros.calories == pytest.approx(330)
+
+
+def test_recipe_with_no_ingredients_is_rejected():
+    """Macros are not calculated for a recipe with no ingredients."""
+    with pytest.raises(InvalidInputError):
+        calculate_recipe_macros(make_recipe())
+
+
+def test_non_positive_nutrition_base_quantity_is_rejected():
+    """An ingredient with a zero base quantity raises instead of dividing by zero."""
+    recipe = make_recipe(recipe_ingredients=[
+        RecipeIngredient(
+            ingredient=make_ingredient(nutrition_base_quantity=0),
+            quantity=200,
+            role=IngredientRole.PRIMARY,
+        ),
+    ])
+
+    with pytest.raises(InvalidInputError):
+        calculate_recipe_macros(recipe)
+
+
+def test_override_for_ingredient_outside_the_recipe_is_rejected(session):
+    """An override keyed by a RecipeIngredient not in this recipe raises."""
+    recipe_ingredient = RecipeIngredient(
+        ingredient=make_ingredient(), quantity=200, role=IngredientRole.PRIMARY
+    )
+    recipe = make_recipe(recipe_ingredients=[recipe_ingredient])
+    session.add(recipe)
+    session.commit()
+
+    with pytest.raises(InvalidInputError):
+        calculate_recipe_macros(recipe, quantity_overrides={recipe_ingredient.id + 1: 150})
+
+
+def test_negative_override_is_rejected(session):
+    """A negative override quantity raises."""
+    recipe_ingredient = RecipeIngredient(
+        ingredient=make_ingredient(), quantity=200, role=IngredientRole.PRIMARY
+    )
+    recipe = make_recipe(recipe_ingredients=[recipe_ingredient])
+    session.add(recipe)
+    session.commit()
+
+    with pytest.raises(InvalidInputError):
+        calculate_recipe_macros(recipe, quantity_overrides={recipe_ingredient.id: -1})

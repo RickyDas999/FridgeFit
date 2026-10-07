@@ -23,19 +23,21 @@ ranker, so each slice ends with runnable recommendations.
 | 4 | Enjoyment score | Not started |
 | 5 | Recent frequency shown informationally | Not started |
 
-**Queued next, after slice 1 is committed: input validation.** Approved by the developer to run
-before slice 2.
+**Input validation (between slices 1 and 2): implemented, not yet committed.**
 
-- Add dedicated input validators, kept separate so domain logic stays focused, covering input edge
-  cases across the app. Exact edge cases and module layout are to be agreed when the slice starts.
-- Reject a recipe with no ingredients in every recipe-handling domain function
-  (`calculate_recipe_macros`, `confirm_meal`; `assess_recipe_availability` already does, inline).
-- Prevent a recipe with no ingredients from ever being persisted, with a save-time check (SQLAlchemy
-  `before_flush`) in `app/persistence/`. Tests that save a recipe before attaching its ingredients
-  must be updated.
-
-Known inconsistency until then: `test_macros_are_zero_for_recipe_with_no_ingredients` expects zero
-macros for a recipe with no ingredients, which contradicts `docs/domain-rules.md`.
+- `app/errors.py` defines `InvalidInputError(ValueError)`, raised by all input validation.
+- `app/domain/validation.py` holds the domain input validators; each domain function calls the
+  ones it needs at its top. They reject:
+  - a recipe with no ingredients (`calculate_recipe_macros`, `assess_recipe_availability`,
+    `confirm_meal`);
+  - non-positive recipe-ingredient quantities, nutrition base quantities, and FEFO
+    `quantity_needed`; negative quantity overrides;
+  - quantity overrides keyed by a RecipeIngredient that is not part of the recipe;
+  - FEFO batch lists that mix ingredients;
+  - a `datetime` passed as `as_of` to the nutrition-state functions.
+- `app/persistence/models.py` registers a SQLAlchemy `before_flush` hook that rejects saving a
+  Recipe with no ingredients: a new empty recipe, emptying a saved recipe, or deleting its last
+  ingredient. Persistence never imports from `app/domain/`.
 
 Open decisions, to settle when their slice starts: the "expiring soon" threshold (2), whole recipe
 vs. per-serving macro fit (3), the score for a recipe with no ratings (4).
@@ -91,7 +93,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-68 tests across `tests/test_models.py` and one test module per domain module. Run with:
+82 tests across `tests/test_models.py` and one test module per domain module. Run with:
 
 ```bash
 .venv/bin/python -m pytest tests/ -v

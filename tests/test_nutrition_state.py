@@ -3,6 +3,7 @@ from datetime import date, datetime
 import pytest
 
 from app.domain.nutrition_state import calculate_remaining_macros, select_applicable_goal
+from app.errors import InvalidInputError
 from app.persistence.models import MealLog, NutritionGoal
 
 
@@ -111,3 +112,15 @@ def test_remaining_macros_raises_when_no_goal_applies():
 
     with pytest.raises(ValueError):
         calculate_remaining_macros([future_goal], [], as_of=date(2026, 1, 1))
+
+
+def test_datetime_as_of_is_rejected_by_remaining_macros():
+    """A datetime would match no meal logs and silently return the full goal, so it raises."""
+    with pytest.raises(InvalidInputError):
+        calculate_remaining_macros([make_goal()], [make_meal_log()], as_of=datetime(2026, 1, 1))
+
+
+def test_datetime_as_of_is_rejected_by_goal_selection():
+    """Goal selection also requires a calendar date."""
+    with pytest.raises(InvalidInputError):
+        select_applicable_goal([make_goal()], as_of=datetime(2026, 1, 1))

@@ -3,6 +3,7 @@ from datetime import date, datetime
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from app.errors import InvalidInputError
 from app.persistence.enums import CanonicalUnit, IngredientRole
 from app.persistence.models import (
     Ingredient,
@@ -155,9 +156,25 @@ def make_recipe(**overrides):
     return Recipe(**defaults)
 
 
+def make_recipe_with_ingredient(quantity=200):
+    """Build an unsaved Recipe with one PRIMARY chicken-breast ingredient attached.
+
+    Args:
+        quantity: Quantity of the ingredient in the recipe.
+
+    Returns:
+        A new, unpersisted Recipe that is valid to save.
+    """
+    return make_recipe(recipe_ingredients=[
+        RecipeIngredient(
+            ingredient=make_ingredient(), quantity=quantity, role=IngredientRole.PRIMARY
+        ),
+    ])
+
+
 def test_recipe_persists_and_retrieves(session):
     """A Recipe round-trips with its JSON instructions intact."""
-    session.add(make_recipe())
+    session.add(make_recipe_with_ingredient())
     session.commit()
 
     fetched = session.query(Recipe).filter_by(name="Grilled Chicken Bowl").one()
@@ -166,7 +183,7 @@ def test_recipe_persists_and_retrieves(session):
 
 def test_recipe_source_url_is_nullable(session):
     """A Recipe can be saved without a source URL."""
-    session.add(make_recipe())
+    session.add(make_recipe_with_ingredient())
     session.commit()
 
     fetched = session.query(Recipe).filter_by(name="Grilled Chicken Bowl").one()
@@ -175,25 +192,13 @@ def test_recipe_source_url_is_nullable(session):
 
 def test_recipe_has_many_recipe_ingredients(session):
     """One Recipe can own multiple RecipeIngredient rows."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
-    session.commit()
-
-    session.add_all([
+    recipe = make_recipe(recipe_ingredients=[
+        RecipeIngredient(ingredient=make_ingredient(), quantity=200, role=IngredientRole.PRIMARY),
         RecipeIngredient(
-            recipe_id=recipe.id,
-            ingredient_id=ingredient.id,
-            quantity=200,
-            role=IngredientRole.PRIMARY,
-        ),
-        RecipeIngredient(
-            recipe_id=recipe.id,
-            ingredient_id=ingredient.id,
-            quantity=5,
-            role=IngredientRole.SUPPORTING,
+            ingredient=make_ingredient(name="Garlic"), quantity=5, role=IngredientRole.SUPPORTING
         ),
     ])
+    session.add(recipe)
     session.commit()
 
     session.refresh(recipe)
@@ -202,39 +207,68 @@ def test_recipe_has_many_recipe_ingredients(session):
 
 def test_recipe_ingredient_does_not_duplicate_nutrition_data(session):
     """RecipeIngredient references Ingredient nutrition instead of copying it."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
+    recipe = make_recipe_with_ingredient()
+    session.add(recipe)
     session.commit()
 
-    recipe_ingredient = RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=200,
-        role=IngredientRole.PRIMARY,
-    )
-    session.add(recipe_ingredient)
-    session.commit()
-
+    recipe_ingredient = recipe.recipe_ingredients[0]
     assert not hasattr(recipe_ingredient, "calories_per_base_unit")
     assert recipe_ingredient.ingredient.calories_per_base_unit == 165
 
 
 def test_negative_recipe_ingredient_quantity_rejected(session):
     """The database rejects a RecipeIngredient with negative quantity."""
-    ingredient = make_ingredient()
-    recipe = make_recipe()
-    session.add_all([ingredient, recipe])
-    session.commit()
-
-    session.add(RecipeIngredient(
-        recipe_id=recipe.id,
-        ingredient_id=ingredient.id,
-        quantity=-1,
-        role=IngredientRole.PRIMARY,
-    ))
+    session.add(make_recipe_with_ingredient(quantity=-1))
     with pytest.raises(IntegrityError):
         session.commit()
+
+
+def test_recipe_without_ingredients_cannot_be_saved(session):
+    """Saving a new Recipe with no ingredients is rejected before anything is written."""
+    session.add(make_recipe())
+    with pytest.raises(InvalidInputError):
+        session.commit()
+
+
+def test_emptying_a_saved_recipe_cannot_be_saved(session):
+    """Removing every ingredient from a saved Recipe is rejected."""
+    recipe = make_recipe_with_ingredient()
+    session.add(recipe)
+    session.commit()
+
+    recipe.recipe_ingredients.clear()
+    with pytest.raises(InvalidInputError):
+        session.commit()
+
+
+def test_deleting_a_recipes_last_ingredient_cannot_be_saved(session):
+    """Deleting a Recipe's only RecipeIngredient is rejected."""
+    recipe = make_recipe_with_ingredient()
+    session.add(recipe)
+    session.commit()
+
+    session.delete(recipe.recipe_ingredients[0])
+    with pytest.raises(InvalidInputError):
+        session.commit()
+
+
+def test_deleting_one_of_several_ingredients_is_allowed(session):
+    """A Recipe may lose an ingredient as long as at least one remains."""
+    garlic = RecipeIngredient(
+        ingredient=make_ingredient(name="Garlic"), quantity=5, role=IngredientRole.SUPPORTING
+    )
+    recipe = make_recipe(recipe_ingredients=[
+        RecipeIngredient(ingredient=make_ingredient(), quantity=200, role=IngredientRole.PRIMARY),
+        garlic,
+    ])
+    session.add(recipe)
+    session.commit()
+
+    session.delete(garlic)
+    session.commit()
+
+    session.refresh(recipe)
+    assert len(recipe.recipe_ingredients) == 1
 
 
 def test_recipe_ingredient_requires_real_recipe(session):
