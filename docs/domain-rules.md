@@ -158,7 +158,10 @@ Enjoyment and repetition:
   count toward any recipe.
 - A recipe with no ratings scores a neutral 0.5, so new recipes are neither helped nor hurt.
 - Meal repetition/frequency does NOT reduce recommendation score in V1.
-- Recent frequency may be shown informationally.
+- Recent frequency may be shown informationally. For each recipe it reports how many times it
+  was eaten in the last 7 days (the reporting date and the 6 days before it) and the date it was
+  last eaten, from full history. Meals logged after the reporting date and meals not made from a
+  recipe do not count.
 - Ranking weights will eventually be configurable per recommendation request.
 
 ## AI Trust Boundary

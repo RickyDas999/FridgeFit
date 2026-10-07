@@ -95,7 +95,7 @@ def test_recipes_are_ranked_by_score_highest_first():
     full = make_recipe("Full", (2, 100, IngredientRole.PRIMARY))
 
     recommendations = recommend_recipes(
-        [partial, full], [make_batch(1, 100), make_batch(2, 100)], AS_OF, None, []
+        [partial, full], [make_batch(1, 100), make_batch(2, 100)], AS_OF, None, [], []
     )
 
     assert [r.recipe.name for r in recommendations] == ["Full", "Partial"]
@@ -110,7 +110,7 @@ def test_ineligible_recipes_are_excluded():
     eligible = make_recipe("Stocked", (3, 100, IngredientRole.PRIMARY))
 
     recommendations = recommend_recipes(
-        [ineligible, eligible], [make_batch(3, 100)], AS_OF, None, []
+        [ineligible, eligible], [make_batch(3, 100)], AS_OF, None, [], []
     )
 
     assert [r.recipe.name for r in recommendations] == ["Stocked"]
@@ -121,7 +121,7 @@ def test_batches_of_the_same_ingredient_are_combined():
     recipe = make_recipe("Chicken", (1, 200, IngredientRole.PRIMARY))
 
     recommendations = recommend_recipes(
-        [recipe], [make_batch(1, 120), make_batch(1, 80)], AS_OF, None, []
+        [recipe], [make_batch(1, 120), make_batch(1, 80)], AS_OF, None, [], []
     )
 
     assert recommendations[0].score == pytest.approx(FULL_STOCK_SCORE)
@@ -133,7 +133,7 @@ def test_freshness_ranks_recipe_using_expiring_ingredient_higher():
     expiring = make_recipe("Expiring", (2, 100, IngredientRole.PRIMARY))
     batches = [make_batch(1, 100), make_batch(2, 100, use_by_date=date(2026, 3, 11))]
 
-    recommendations = recommend_recipes([keeps, expiring], batches, AS_OF, None, [])
+    recommendations = recommend_recipes([keeps, expiring], batches, AS_OF, None, [], [])
 
     assert [r.recipe.name for r in recommendations] == ["Expiring", "Keeps"]
 
@@ -143,7 +143,7 @@ def test_recommendation_carries_expired_batch_warnings():
     recipe = make_recipe("Leftovers", (1, 100, IngredientRole.PRIMARY))
     expired = make_batch(1, 100, use_by_date=date(2026, 3, 1))
 
-    recommendation = recommend_recipes([recipe], [expired], AS_OF, None, [])[0]
+    recommendation = recommend_recipes([recipe], [expired], AS_OF, None, [], [])[0]
 
     assert recommendation.freshness.expired_batches == [expired]
     assert recommendation.score == pytest.approx(FULL_STOCK_SCORE)
@@ -152,7 +152,7 @@ def test_recommendation_carries_expired_batch_warnings():
 def test_datetime_as_of_is_rejected():
     """Recommendations require a calendar date, not a datetime."""
     with pytest.raises(InvalidInputError):
-        recommend_recipes([], [], datetime(2026, 3, 10), None, [])
+        recommend_recipes([], [], datetime(2026, 3, 10), None, [], [])
 
 
 def make_single_ingredient_recipe(name, ingredient_id, calories_per_100g):
@@ -200,7 +200,7 @@ def test_macro_fit_ranks_recipe_within_calorie_budget_higher():
     remaining = RemainingMacros(calories=400, protein=0, carbs=0, fat=0)
 
     recommendations = recommend_recipes(
-        [heavy, light], [make_batch(1, 100), make_batch(2, 100)], AS_OF, remaining, []
+        [heavy, light], [make_batch(1, 100), make_batch(2, 100)], AS_OF, remaining, [], []
     )
 
     assert [r.recipe.name for r in recommendations] == ["Light", "Heavy"]
@@ -211,7 +211,7 @@ def test_macro_fit_is_left_out_without_a_nutrition_goal():
     """With no remaining macros, macro fit is skipped and the other weights rescale."""
     recipe = make_single_ingredient_recipe("Light", 1, calories_per_100g=200)
 
-    recommendation = recommend_recipes([recipe], [make_batch(1, 100)], AS_OF, None, [])[0]
+    recommendation = recommend_recipes([recipe], [make_batch(1, 100)], AS_OF, None, [], [])[0]
 
     assert recommendation.macro_fit is None
     assert recommendation.score == pytest.approx(FULL_STOCK_SCORE)
@@ -225,10 +225,30 @@ def test_enjoyment_ranks_well_liked_recipe_higher():
     feedback = [MealFeedback(rating=5, meal_log=MealLog(recipe_id=2))]
 
     recommendations = recommend_recipes(
-        [unrated, favorite], [make_batch(1, 100), make_batch(2, 100)], AS_OF, None, feedback
+        [unrated, favorite], [make_batch(1, 100), make_batch(2, 100)], AS_OF, None, feedback, []
     )
 
     assert [r.recipe.name for r in recommendations] == ["Favorite", "Unrated"]
     favorite_score = expected_score(availability=1.0, enjoyment=1.0)
     assert recommendations[0].score == pytest.approx(favorite_score)
     assert recommendations[1].enjoyment.score == 0.5
+
+
+def test_recent_frequency_is_reported_but_never_changes_the_score():
+    """A recipe eaten often scores the same as an identical uneaten one."""
+    often = make_recipe("Often", (1, 100, IngredientRole.PRIMARY))
+    never = make_recipe("Never", (2, 100, IngredientRole.PRIMARY))
+    often.id, never.id = 1, 2
+    meal_logs = [
+        MealLog(recipe_id=1, consumed_at=datetime(2026, 3, day, 12)) for day in (8, 9, 10)
+    ]
+
+    recommendations = recommend_recipes(
+        [often, never], [make_batch(1, 100), make_batch(2, 100)], AS_OF, None, [], meal_logs
+    )
+
+    by_name = {r.recipe.name: r for r in recommendations}
+    assert by_name["Often"].score == pytest.approx(by_name["Never"].score)
+    assert by_name["Often"].recent_frequency.times_eaten_recently == 3
+    assert by_name["Often"].recent_frequency.last_eaten_on == date(2026, 3, 10)
+    assert by_name["Never"].recent_frequency.times_eaten_recently == 0

@@ -12,8 +12,13 @@ from app.domain.freshness import RecipeFreshness, assess_recipe_freshness
 from app.domain.inventory_aggregation import aggregate_inventory_by_ingredient
 from app.domain.macro_fit import MacroFit, assess_macro_fit
 from app.domain.nutrition_state import RemainingMacros
+from app.domain.recent_frequency import (
+    RecentFrequency,
+    assess_recent_frequency,
+    group_meal_dates_by_recipe,
+)
 from app.domain.validation import validate_calendar_date
-from app.persistence.models import InventoryBatch, MealFeedback, Recipe
+from app.persistence.models import InventoryBatch, MealFeedback, MealLog, Recipe
 
 DEFAULT_WEIGHTS = {
     "availability": 0.4,
@@ -32,6 +37,7 @@ class Recommendation(NamedTuple):
     freshness: RecipeFreshness
     macro_fit: MacroFit | None
     enjoyment: RecipeEnjoyment
+    recent_frequency: RecentFrequency
 
 
 def combine_scores(scores: dict[str, float]) -> float:
@@ -56,6 +62,7 @@ def recommend_recipes(
     as_of: date,
     remaining_macros: RemainingMacros | None,
     meal_feedback: Sequence[MealFeedback],
+    meal_logs: Sequence[MealLog],
 ) -> list[Recommendation]:
     """Rank recipes by how well they can be made on a given date.
 
@@ -70,6 +77,8 @@ def recommend_recipes(
             macro fit is then left out of the ranking.
         meal_feedback: The user's meal ratings. Each one's ``meal_log`` must be loadable. Pass
             an empty sequence when nothing has been rated yet.
+        meal_logs: The user's meal history, used only to report recent frequency; it never
+            affects the ranking.
 
     Returns:
         Eligible recipes as Recommendations, highest score first.
@@ -80,6 +89,7 @@ def recommend_recipes(
     """
     validate_calendar_date(as_of)
     ratings_by_recipe = group_ratings_by_recipe(meal_feedback)
+    meal_dates_by_recipe = group_meal_dates_by_recipe(meal_logs, as_of)
 
     inventory_totals = aggregate_inventory_by_ingredient(batches)
     batches_by_ingredient = defaultdict(list)
@@ -104,7 +114,13 @@ def recommend_recipes(
 
         recommendations.append(
             Recommendation(
-                recipe, combine_scores(scores), availability, freshness, macro_fit, enjoyment
+                recipe=recipe,
+                score=combine_scores(scores),
+                availability=availability,
+                freshness=freshness,
+                macro_fit=macro_fit,
+                enjoyment=enjoyment,
+                recent_frequency=assess_recent_frequency(recipe, meal_dates_by_recipe, as_of),
             )
         )
 
