@@ -109,6 +109,75 @@ def test_insufficient_inventory_raises_and_writes_nothing(session):
     assert batch.quantity_remaining == 100
 
 
+def test_explicit_override_consumes_only_available_inventory_and_scales_macros(session):
+    ingredient = make_ingredient()
+    recipe = make_recipe()
+    session.add_all([ingredient, recipe])
+    session.commit()
+
+    session.add(RecipeIngredient(recipe_id=recipe.id, ingredient_id=ingredient.id, quantity=220, role=IngredientRole.PRIMARY))
+    batch = InventoryBatch(ingredient_id=ingredient.id, quantity_initial=150, quantity_remaining=150, purchased_at=datetime(2026, 1, 1))
+    session.add(batch)
+    session.commit()
+    session.refresh(recipe)
+
+    meal_log = confirm_meal(session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0), allow_shortfall=True)
+
+    logged = session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).one()
+    assert logged.quantity == 150
+    assert batch.quantity_remaining == 0
+    assert batch.depleted_at is not None
+    # 150g of chicken (165 cal/100g), not the recipe's full 220g
+    assert meal_log.calories == pytest.approx(165 * 1.5)
+
+
+def test_explicit_override_with_zero_available_skips_meal_log_ingredient(session):
+    ingredient = make_ingredient()
+    recipe = make_recipe()
+    session.add_all([ingredient, recipe])
+    session.commit()
+
+    session.add(RecipeIngredient(recipe_id=recipe.id, ingredient_id=ingredient.id, quantity=200, role=IngredientRole.PRIMARY))
+    session.commit()
+    session.refresh(recipe)
+
+    meal_log = confirm_meal(session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0), allow_shortfall=True)
+
+    assert session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).count() == 0
+    assert meal_log.calories == pytest.approx(0)
+
+
+def test_explicit_override_with_mixed_sufficient_and_short_ingredients(session):
+    chicken = make_ingredient()
+    rice = make_ingredient(
+        name="Rice",
+        calories_per_base_unit=130,
+        protein_per_base_unit=2.7,
+        carbs_per_base_unit=28,
+        fat_per_base_unit=0.3,
+    )
+    recipe = make_recipe()
+    session.add_all([chicken, rice, recipe])
+    session.commit()
+
+    session.add_all([
+        RecipeIngredient(recipe_id=recipe.id, ingredient_id=chicken.id, quantity=220, role=IngredientRole.PRIMARY),
+        RecipeIngredient(recipe_id=recipe.id, ingredient_id=rice.id, quantity=150, role=IngredientRole.SUPPORTING),
+        InventoryBatch(ingredient_id=chicken.id, quantity_initial=150, quantity_remaining=150, purchased_at=datetime(2026, 1, 1)),
+        InventoryBatch(ingredient_id=rice.id, quantity_initial=500, quantity_remaining=500, purchased_at=datetime(2026, 1, 1)),
+    ])
+    session.commit()
+    session.refresh(recipe)
+
+    meal_log = confirm_meal(session, recipe, consumed_at=datetime(2026, 1, 15, 12, 0), allow_shortfall=True)
+
+    logged = {
+        mli.ingredient_id: mli.quantity
+        for mli in session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).all()
+    }
+    assert logged == {chicken.id: 150, rice.id: 150}
+
+
 def test_confirming_a_meal_with_multiple_ingredients(session):
     chicken = make_ingredient()
     rice = make_ingredient(

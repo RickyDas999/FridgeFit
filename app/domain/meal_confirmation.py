@@ -17,8 +17,16 @@ class InsufficientInventoryError(Exception):
         super().__init__(f"Insufficient inventory to confirm meal: {details}")
 
 
-def confirm_meal(session: Session, recipe: Recipe, *, consumed_at: datetime, name: str | None = None) -> MealLog:
+def confirm_meal(
+    session: Session,
+    recipe: Recipe,
+    *,
+    consumed_at: datetime,
+    name: str | None = None,
+    allow_shortfall: bool = False,
+) -> MealLog:
     consumption_plans = {}
+    fulfilled_quantities = {}
     shortfalls = {}
 
     for recipe_ingredient in recipe.recipe_ingredients:
@@ -26,15 +34,16 @@ def confirm_meal(session: Session, recipe: Recipe, *, consumed_at: datetime, nam
         plan = plan_fefo_consumption(available_batches, recipe_ingredient.quantity)
         fulfilled = sum(consumption.quantity for consumption in plan)
 
+        consumption_plans[recipe_ingredient] = plan
+        fulfilled_quantities[recipe_ingredient.id] = fulfilled
+
         if fulfilled < recipe_ingredient.quantity:
             shortfalls[recipe_ingredient.ingredient_id] = (recipe_ingredient.quantity, fulfilled)
-        else:
-            consumption_plans[recipe_ingredient] = plan
 
-    if shortfalls:
+    if shortfalls and not allow_shortfall:
         raise InsufficientInventoryError(shortfalls)
 
-    macros = calculate_recipe_macros(recipe)
+    macros = calculate_recipe_macros(recipe, quantity_overrides=fulfilled_quantities)
     meal_log = MealLog(
         name=name or recipe.name,
         recipe_id=recipe.id,
@@ -47,11 +56,13 @@ def confirm_meal(session: Session, recipe: Recipe, *, consumed_at: datetime, nam
     session.add(meal_log)
 
     for recipe_ingredient, plan in consumption_plans.items():
-        session.add(MealLogIngredient(
-            meal_log=meal_log,
-            ingredient_id=recipe_ingredient.ingredient_id,
-            quantity=recipe_ingredient.quantity,
-        ))
+        actual_quantity = fulfilled_quantities[recipe_ingredient.id]
+        if actual_quantity > 0:
+            session.add(MealLogIngredient(
+                meal_log=meal_log,
+                ingredient_id=recipe_ingredient.ingredient_id,
+                quantity=actual_quantity,
+            ))
         for consumption in plan:
             consumption.batch.quantity_remaining -= consumption.quantity
             if consumption.batch.quantity_remaining == 0:

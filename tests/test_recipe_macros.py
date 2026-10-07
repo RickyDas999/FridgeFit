@@ -93,3 +93,37 @@ def test_macros_are_zero_for_recipe_with_no_ingredients(session):
     macros = calculate_recipe_macros(recipe)
 
     assert macros == (0, 0, 0, 0)
+
+
+def test_quantity_override_scales_macros_for_that_ingredient(session):
+    ingredient = make_ingredient()
+    recipe = make_recipe()
+    session.add_all([ingredient, recipe])
+    session.commit()
+
+    recipe_ingredient = RecipeIngredient(
+        recipe_id=recipe.id, ingredient_id=ingredient.id, quantity=200, role=IngredientRole.PRIMARY
+    )
+    session.add(recipe_ingredient)
+    session.commit()
+    session.refresh(recipe)
+
+    macros = calculate_recipe_macros(recipe, quantity_overrides={recipe_ingredient.id: 150})
+
+    assert macros.calories == pytest.approx(165 * 1.5)
+    assert macros.protein == pytest.approx(31 * 1.5)
+
+
+def test_quantity_override_defaults_to_recipe_quantity_when_absent(session):
+    ingredient = make_ingredient()
+    recipe = make_recipe()
+    session.add_all([ingredient, recipe])
+    session.commit()
+
+    session.add(RecipeIngredient(recipe_id=recipe.id, ingredient_id=ingredient.id, quantity=200, role=IngredientRole.PRIMARY))
+    session.commit()
+    session.refresh(recipe)
+
+    macros = calculate_recipe_macros(recipe, quantity_overrides={})
+
+    assert macros.calories == pytest.approx(330)
