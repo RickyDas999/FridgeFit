@@ -9,28 +9,19 @@ Last updated: 2026-10-07
 
 ## Status
 
-**Completed: Core Deterministic Domain Logic.** All five planned slices are implemented and tested.
+**Completed milestones:**
 
-**Active milestone: Recommendations.** Governing rules are in the Recommendations section of
-`docs/domain-rules.md`. Every slice is a pure function in `app/domain/` and adds to a working
-ranker, so each slice ends with runnable recommendations.
+1. **Core Deterministic Domain Logic**: recipe macros, nutrition state, inventory aggregation,
+   FEFO consumption, and atomic meal confirmation.
+2. **Recommendations**: availability, freshness, macro fit, and enjoyment scoring combined into a
+   weighted ranking, plus informational recent frequency. Includes the input-validation slice and
+   CI setup completed during the milestone.
 
-| # | Slice | Status |
-|---|---|---|
-| 1 | Availability, eligibility, and a weighted-sum ranker (`availability.py`, `recommendations.py`) | Done |
-| — | Input validation (`app/errors.py`, `app/domain/validation.py`, save-time recipe check) | Done |
-| 2 | Freshness score and expired-batch warnings (`freshness.py`) | Done |
-| 3 | Macro fit score (`macro_fit.py`) | Done |
-| 4 | Enjoyment score (`enjoyment.py`) | Done |
-| 5 | Recent frequency shown informationally (`recent_frequency.py`) | Implemented, not yet committed |
+**Next step: add Codex to the CI pipeline** as an additional review layer, as approved by the
+developer. This is pipeline work, not a feature milestone.
 
-Slice 5 is the last slice: merging it completes the Recommendations milestone.
-
-**Next, once slice 5 merges:** the developer adds Codex to the CI pipeline as an additional review
-layer. Do not start another feature milestone; stop at that point.
-
-Until a component's slice lands, `combine_scores` leaves it out and rescales the remaining default
-weights to sum to 1.
+**No feature milestone is active.** Do not start new feature work until the developer approves
+the next milestone and its scope.
 
 ## Implemented
 
@@ -51,15 +42,15 @@ Schema details beyond the core domain rules:
 - A SQLAlchemy `before_flush` hook in `models.py` rejects saving a Recipe with no ingredients: a
   new empty recipe, emptying a saved recipe, or deleting its last ingredient.
 
-### Domain logic (`app/domain/`)
+### Core domain logic (`app/domain/`)
 
-| Slice | Module | Entry point |
+| Area | Module | Entry point |
 |---|---|---|
-| 1. Recipe macro calculation | `recipe_macros.py` | `calculate_recipe_macros(recipe, quantity_overrides=None)` |
-| 2. Current nutrition state | `nutrition_state.py` | `select_applicable_goal`, `calculate_remaining_macros` |
-| 3. Inventory aggregation | `inventory_aggregation.py` | `aggregate_inventory_by_ingredient(batches)` |
-| 4. FEFO consumption | `fefo_consumption.py` | `plan_fefo_consumption(batches, quantity_needed)` |
-| 5. Meal confirmation | `meal_confirmation.py` | `confirm_meal(session, recipe, *, consumed_at, name=None, allow_shortfall=False)` |
+| Recipe macro calculation | `recipe_macros.py` | `calculate_recipe_macros(recipe, quantity_overrides=None)` |
+| Current nutrition state | `nutrition_state.py` | `select_applicable_goal`, `calculate_remaining_macros` |
+| Inventory aggregation | `inventory_aggregation.py` | `aggregate_inventory_by_ingredient(batches)` |
+| FEFO consumption | `fefo_consumption.py` | `plan_fefo_consumption(batches, quantity_needed)` |
+| Meal confirmation | `meal_confirmation.py` | `confirm_meal(session, recipe, *, consumed_at, name=None, allow_shortfall=False)` |
 
 Implementation behavior worth knowing:
 
@@ -96,7 +87,8 @@ Implementation behavior worth knowing:
   (recipe, combined score, availability, freshness, macro-fit, enjoyment, and recent-frequency
   details) highest score first.
 - `remaining_macros` is required but may be None (no nutrition goal in effect yet). Macro fit is
-  then skipped and `Recommendation.macro_fit` is None.
+  then skipped, `Recommendation.macro_fit` is None, and `combine_scores` rescales the remaining
+  default weights to sum to 1. This is the only case where weights are rescaled.
 - `meal_feedback` is required; pass an empty sequence when nothing has been rated. Enjoyment is
   always scored (0.5 when unrated), so with a nutrition goal all four weights apply unscaled.
 - `meal_logs` is required and used only for `Recommendation.recent_frequency`; it never affects
@@ -115,7 +107,8 @@ Implementation behavior worth knowing:
     `quantity_needed`; negative quantity overrides;
   - quantity overrides keyed by a RecipeIngredient that is not part of the recipe;
   - FEFO batch lists that mix ingredients;
-  - a `datetime` passed as `as_of` (nutrition state, freshness, recommendations);
+  - a `datetime` passed as `as_of` (nutrition state, freshness, recent frequency,
+    recommendations);
   - ratings that are not whole numbers from 1 to 5.
 - Persistence never imports from `app/domain/`.
 
@@ -142,6 +135,8 @@ Implementation behavior worth knowing:
 - Nutrition-data API integration
 - Claude API integration
 - Use of `MealLog.idempotency_key` in meal confirmation
+- Ranking weights configurable per recommendation request (the defaults are fixed in
+  `DEFAULT_WEIGHTS`)
 - Grocery addition and manual inventory correction operations
 - Alembic migrations
 - Docker

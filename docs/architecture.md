@@ -29,6 +29,8 @@ Concurrent writes are not currently a meaningful concern.
 - SQLAlchemy 2.x
 - SQLite as the V1 relational database
 - pytest
+- Ruff for linting, pinned to an exact version and configured in `pyproject.toml`
+- GitHub Actions for CI: lint and tests on every pull request and every push to `main`
 
 PostgreSQL is a possible future migration only if multi-user deployment or concurrency genuinely
 requires it.
@@ -60,12 +62,18 @@ Neither is implemented. Neither may be implemented until explicitly requested.
 
 ```text
 app/
+├── errors.py      InvalidInputError, shared by both layers
 ├── persistence/   database setup, enums, SQLAlchemy models
-└── domain/        deterministic business logic
+└── domain/        deterministic business logic and its input validators
 tests/             pytest suite; tests/conftest.py provides an in-memory SQLite session
+.github/workflows/ CI workflow
 ```
 
 - Deterministic domain logic stays separate from persistence concerns where practical.
+- Dependencies point one way: `domain` may import `persistence`, never the reverse. Anything both
+  layers need, such as `InvalidInputError`, lives outside them in `app/errors.py`.
+- Domain functions validate their inputs through `app/domain/validation.py` and raise
+  `InvalidInputError`, rather than failing deep inside a calculation or returning a wrong result.
 - Domain calculations are written as pure functions over already-loaded objects (no `Session`, no
   queries) where practical. A domain operation that must be atomic may take a `Session` and own the
   transaction boundary; `confirm_meal` is the current example.
@@ -74,8 +82,11 @@ tests/             pytest suite; tests/conftest.py provides an in-memory SQLite 
 
 - SQLite foreign-key enforcement is enabled on every connection (`PRAGMA foreign_keys=ON` via a
   SQLAlchemy connect-event hook). SQLite leaves foreign keys unenforced by default.
-- Clearly invalid values (negative quantities or macros, ratings outside 1–5) are rejected by
-  database `CheckConstraint`s.
+- Clearly invalid values (negative quantities or macros, ratings outside 1–5, non-positive
+  servings) are rejected by database `CheckConstraint`s.
+- Rules a database constraint cannot express are enforced before each save with a SQLAlchemy
+  `before_flush` hook in `models.py`. The current one rejects a Recipe with no ingredients, which
+  a constraint cannot check because the Recipe row must exist before its ingredient rows.
 - Recipe instructions are stored in a JSON column.
 - There are no migrations (Alembic is not set up). The test fixture creates the schema with
   `Base.metadata.create_all`; no application entry point creates it yet.
