@@ -119,3 +119,17 @@ def validate_calendar_date(as_of: date) -> None:
     """
     if isinstance(as_of, datetime) or not isinstance(as_of, date):
         raise InvalidInputError(f"Expected a calendar date, got {as_of!r}")
+
+
+def validate_ratings(ratings: Sequence[int]) -> None:
+    """Check that every rating is a whole number from 1 to 5.
+
+    Args:
+        ratings: The ratings to check.
+
+    Raises:
+        InvalidInputError: If any rating is not an integer from 1 to 5.
+    """
+    for rating in ratings:
+        if isinstance(rating, bool) or not isinstance(rating, int) or not 1 <= rating <= 5:
+            raise InvalidInputError(f"Ratings must be whole numbers from 1 to 5, got {rating!r}")

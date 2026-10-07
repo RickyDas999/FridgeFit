@@ -153,6 +153,10 @@ what is left of today's goal. With *s* the serving's amount and *r* the amount r
 Enjoyment and repetition:
 
 - Enjoyment uses a 1–5 rating scale.
+- A recipe's enjoyment is the simple average of the user's ratings of meals made from it, mapped
+  linearly onto 0–1 (1 → 0.0, 3 → 0.5, 5 → 1.0). Ratings of manual meals with no recipe do not
+  count toward any recipe.
+- A recipe with no ratings scores a neutral 0.5, so new recipes are neither helped nor hurt.
 - Meal repetition/frequency does NOT reduce recommendation score in V1.
 - Recent frequency may be shown informationally.
 - Ranking weights will eventually be configurable per recommendation request.
