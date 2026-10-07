@@ -11,9 +11,10 @@ Last updated: 2026-10-07
 
 **Completed: Core Deterministic Domain Logic.** All five planned slices are implemented and tested.
 
-**Next milestone: not yet approved.** The developer has referred to a recommendation milestone as
-upcoming. Its scope and slice plan have not been written down or approved. Do not begin it, or any
-other milestone, until the developer explicitly approves its scope.
+**Next milestone: Recommendations.** Approved by the developer as the next milestone. Its scope
+and slice plan have not been defined yet. Do not begin implementing it until the developer
+approves a slice plan; the governing rules are in the Recommendations section of
+`docs/domain-rules.md`.
 
 ## Implemented
 

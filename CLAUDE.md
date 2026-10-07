@@ -227,11 +227,7 @@ Avoid:
 
 Follow PEP 8 formatting throughout (naming, whitespace, blank lines between top-level definitions, line length).
 
-Maximum line length is 99 characters — the team-agreed extension PEP 8 explicitly permits over its 79-character default. Check with:
-
-```bash
-.venv/bin/python -m pycodestyle --max-line-length=99 app tests
-```
+Maximum line length is 99 characters — the team-agreed extension PEP 8 explicitly permits over its 79-character default.
 
 Every function and class gets a docstring, enterprise-style, regardless of how obvious the function appears:
 - one-line summary of what it does;

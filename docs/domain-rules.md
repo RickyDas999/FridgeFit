@@ -34,6 +34,12 @@ For architecture, see `docs/architecture.md`. For what is currently built, see
   - fall back to oldest purchase date when needed.
 - Manual inventory corrections must NOT create MealLogs or change nutrition consumption.
 - Inventory state and personal nutrition consumption are separate concepts.
+- Kitchen inventory is an estimate. Confirming a meal whose recipe needs more of an ingredient
+  than inventory holds:
+  - must detect and report the shortfall by default, writing nothing;
+  - may proceed only when the user explicitly confirms anyway;
+  - when confirmed anyway, consumes only what inventory actually holds — inventory never goes
+    negative, and emptied batches are marked depleted.
 
 ## Recipes
 
@@ -54,12 +60,21 @@ For architecture, see `docs/architecture.md`. For what is currently built, see
 - Historical meal macros must not change later if Ingredient nutrition data changes.
 - MealLogIngredient stores the Ingredient and the actual quantity used. It exists for
   ingredient-level traceability.
+- A recipe will not always be followed exactly. When the quantity actually used differs from the
+  recipe's stated quantity (including an explicitly confirmed inventory shortfall), both the
+  MealLogIngredient quantity and the MealLog macros reflect the amount actually consumed, not the
+  recipe amount. The difference from the recipe is derived by comparing RecipeIngredient
+  quantities with MealLogIngredient quantities; it is not stored separately.
 - Manual macro-only meals may create a MealLog without MealLogIngredients.
 
 ## Nutrition Goals
 
 - Nutrition goals are historically preserved using an effective date.
 - Remaining macros are derived: `remaining = applicable goal - consumed MealLogs`.
+- The applicable goal for a date is the goal with the latest effective date on or before that
+  date.
+- Consumption is counted per calendar day: only MealLogs consumed on the same calendar day as the
+  requested date count toward that day's remaining macros.
 - Remaining values may become negative when a target has been exceeded.
 - Changing inventory must never automatically change nutrition goals or consumption.
 
