@@ -17,8 +17,8 @@ Last updated: 2026-10-07
    weighted ranking, plus informational recent frequency. Includes the input-validation slice and
    CI setup completed during the milestone.
 
-**Feature development is paused** while an independent, advisory AI pull-request review is
-integrated into CI. This is pipeline work, not a feature milestone.
+**Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
+not a feature milestone.
 
 **No feature milestone is active.** The next one has not been chosen. Do not start new feature
 work until the developer approves the next milestone and its scope.
