@@ -66,7 +66,9 @@ def assess_recipe_availability(
     ingredients = []
     for recipe_ingredient in recipe.recipe_ingredients:
         on_hand = inventory_totals.get(recipe_ingredient.ingredient_id, 0.0)
-        per_serving = recipe_ingredient.quantity / recipe.servings
+        per_serving = recipe_ingredient.quantity
+        if recipe_ingredient.role == IngredientRole.PRIMARY:
+            per_serving /= recipe.servings
         fraction = min(on_hand / per_serving, 1.0)
         ingredients.append(IngredientAvailability(recipe_ingredient, on_hand, fraction))
 
