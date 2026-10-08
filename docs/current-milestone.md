@@ -17,11 +17,11 @@ Last updated: 2026-10-07
    weighted ranking, plus informational recent frequency. Includes the input-validation slice and
    CI setup completed during the milestone.
 
-**Next step: add Codex to the CI pipeline** as an additional review layer, as approved by the
-developer. This is pipeline work, not a feature milestone.
+**Feature development is paused** while an independent, advisory AI pull-request review is
+integrated into CI. This is pipeline work, not a feature milestone.
 
-**No feature milestone is active.** Do not start new feature work until the developer approves
-the next milestone and its scope.
+**No feature milestone is active.** The next one has not been chosen. Do not start new feature
+work until the developer approves the next milestone and its scope.
 
 ## Implemented
 
@@ -128,6 +128,25 @@ Implementation behavior worth knowing:
 - Ruff is pinned (`ruff==0.16.10`) and configured in `pyproject.toml`.
 - `main` is protected: changes merge only through a pull request with both CI checks passing; no
   approval is required, and the admin can bypass in an emergency.
+- `.github/workflows/ai-review.yml` runs an advisory semantic review when the developer adds the
+  `ai-review` label to a pull request (or runs the workflow manually). It never runs on ordinary
+  pushes.
+  - `scripts/ai_review.py` gathers a bounded bundle deterministically: PR title, description,
+    changed-file list, the diff of human-authored files, unchanged test files for changed
+    modules, and relevant doc sections. Generated files are excluded, and the bundle has a hard
+    size ceiling.
+  - It makes exactly one Claude API request with no tools, using `AGENTS.md` as the reviewer
+    contract, and posts one structured PR comment with at most 3 findings. The response is
+    validated locally against that structure; a malformed one is replaced by a fixed
+    `Status: ERROR` comment, with no second request.
+  - It runs via `pull_request_target` from the trusted default branch and never checks out or
+    executes PR-branch code; PR content is fetched with `gh` and treated as text only.
+  - Generated-only, trivial documentation, and oversized PRs are skipped without a model call.
+  - Advisory only: the workflow can read the repository and comment on the PR, but has no
+    contents write and is not a required check.
+  - Requires the `ANTHROPIC_API_KEY` repository secret; the model is set in the workflow.
+- Trust model: Ruff and pytest are the deterministic source of truth; the single-call Claude
+  review is an independent semantic critic; the developer makes the final engineering judgment.
 
 ## Intentionally Unimplemented
 
@@ -140,4 +159,3 @@ Implementation behavior worth knowing:
 - Grocery addition and manual inventory correction operations
 - Alembic migrations
 - Docker
-- Agent (Codex) review in CI

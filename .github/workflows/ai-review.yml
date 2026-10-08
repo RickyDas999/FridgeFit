@@ -1,0 +1,75 @@
+name: AI Review
+
+# Paid, advisory, and intentional: runs only when the `ai-review` label is added to a pull
+# request (or manually), never on every push. Ruff and pytest in ci.yml remain authoritative.
+#
+# Security: this job has ANTHROPIC_API_KEY, so it must never execute code from a PR branch.
+# `pull_request_target` runs this workflow file from the base branch, and the checkout below is
+# the default branch. The PR's title, description, file list, and diff are fetched through `gh`
+# as text and are only ever passed to the model as data. Never check out the PR head, run its
+# scripts, install its dependencies, or interpolate PR text into `run:` commands here.
+on:
+  pull_request_target:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to review
+        required: true
+        type: number
+
+# Read the repository and post one PR comment. No contents write, so nothing can be pushed,
+# committed, or merged.
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'ai-review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+      # The one place to change the review model.
+      AI_REVIEW_MODEL: claude-haiku-4-5
+
+    steps:
+      # Trusted code only: the reviewer script, AGENTS.md, docs, and unchanged test files all
+      # come from the default branch, never from the pull request.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # CI-only dependency, pinned here on the trusted branch; not an application dependency.
+      - name: Install reviewer dependency
+        run: pip install "anthropic==1.12.1"
+
+      - name: Run single-call review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/ai_review.py --pr "$PR_NUMBER" --output "$RUNNER_TEMP/ai-review.md"
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/ai-review.md"
+
+      # Removing the label lets the developer request another review later by adding it again.
+      - name: Remove ai-review label
+        if: always() && github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels/ai-review" \
+            || echo "ai-review label was already removed"

@@ -30,6 +30,8 @@ This file describes **how Claude Code should work** in this repository. System f
 | `docs/domain-rules.md` | Durable product/domain invariants |
 | `docs/current-milestone.md` | What is implemented now, what is unimplemented, and which milestone is active |
 
+`AGENTS.md` is the contract for the single-call Claude review that CI runs when a pull request is labeled `ai-review`. It does not apply to local implementation work. The review's findings are advisory hypotheses; the developer decides whether to act on them.
+
 Before making architecture or domain decisions, read:
 - `docs/architecture.md`
 - `docs/domain-rules.md`
