@@ -84,6 +84,8 @@ Implementation behavior worth knowing:
 | `recent_frequency.py` | `group_meal_dates_by_recipe(meal_logs, as_of)`, `assess_recent_frequency(recipe, meal_dates_by_recipe, as_of)` |
 | `recommendations.py` | `recommend_recipes(recipes, batches, as_of, remaining_macros, meal_feedback, meal_logs)`, `combine_scores(scores)` |
 
+- Recommendations describe cooking one serving: availability compares stock with each
+  ingredient's per-serving quantity, and macro fit scores one serving's macros.
 - `recommend_recipes` drops ineligible recipes, scores the rest, and returns `Recommendation`s
   (recipe, combined score, availability, expiry-urgency, macro-fit, enjoyment, and recent-frequency
   details) highest score first.
@@ -115,7 +117,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-158 tests across `tests/test_models.py` and one test module per domain module. Run with:
+162 tests across `tests/test_models.py` and one test module per domain module. Run with:
 
 ```bash
 .venv/bin/ruff check .
@@ -148,12 +150,6 @@ Implementation behavior worth knowing:
   - Requires the `ANTHROPIC_API_KEY` repository secret; the model is set in the workflow.
 - Trust model: Ruff and pytest are the deterministic source of truth; the single-call Claude
   review is an independent semantic critic; the developer makes the final engineering judgment.
-
-## Known Gaps
-
-- Recommendation availability checks inventory against a recipe's full quantities, while macro
-  fit and meal confirmation work per serving. A recipe can rank as short of stock even when one
-  serving's worth is on hand. Changing this is a recommendation-behavior decision.
 
 ## Intentionally Unimplemented
 

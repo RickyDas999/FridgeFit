@@ -92,6 +92,10 @@ Primary question:
 
 > What can I make right now?
 
+Recommendations describe cooking **one serving**. Availability and macro fit are both judged
+for a single serving: each recipe ingredient's per-serving quantity is its recipe quantity
+divided by the recipe's servings.
+
 Ranking order:
 
 1. Availability
@@ -109,8 +113,9 @@ Eligibility and availability:
 - A meal missing exactly one PRIMARY ingredient may still be recommended. Missing SUPPORTING or
   OPTIONAL ingredients never exclude a meal.
 - Ingredient importance uses PRIMARY, SUPPORTING, OPTIONAL.
-- Missing-ingredient importance affects the availability score: each ingredient's fraction on
-  hand (capped at 1) is averaged with role weights PRIMARY 3, SUPPORTING 2, OPTIONAL 1.
+- Missing-ingredient importance affects the availability score: each ingredient's fraction of
+  its per-serving quantity on hand (capped at 1) is averaged with role weights PRIMARY 3,
+  SUPPORTING 2, OPTIONAL 1.
 
 Combining scores:
 
