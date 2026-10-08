@@ -10,11 +10,12 @@ SUPPORTING = IngredientRole.SUPPORTING
 OPTIONAL = IngredientRole.OPTIONAL
 
 
-def make_recipe(*ingredients):
+def make_recipe(*ingredients, servings=1):
     """Build an unsaved Recipe from ingredient specs.
 
     Args:
         *ingredients: ``(ingredient_id, quantity, role)`` tuples, one per RecipeIngredient.
+        servings: Number of servings the recipe makes.
 
     Returns:
         A new, unpersisted Recipe with its RecipeIngredients attached.
@@ -23,7 +24,7 @@ def make_recipe(*ingredients):
         name="Test Recipe",
         instructions=[],
         prep_minutes=10,
-        servings=1,
+        servings=servings,
         recipe_ingredients=[
             RecipeIngredient(ingredient_id=ingredient_id, quantity=quantity, role=role)
             for ingredient_id, quantity, role in ingredients
@@ -117,3 +118,37 @@ def test_non_positive_recipe_quantity_is_rejected():
     """A zero ingredient quantity raises instead of dividing by zero."""
     with pytest.raises(InvalidInputError):
         assess_recipe_availability(make_recipe((1, 0, PRIMARY)), {1: 100})
+
+
+def test_availability_is_judged_for_one_serving():
+    """A 4-serving recipe needing 400g is fully available with one serving's 100g on hand."""
+    recipe = make_recipe((1, 400, PRIMARY), servings=4)
+
+    availability = assess_recipe_availability(recipe, {1: 100})
+
+    assert availability.ingredients[0].fraction_available == 1.0
+    assert availability.score == pytest.approx(1.0)
+
+
+def test_partial_amount_is_a_fraction_of_one_serving():
+    """The on-hand fraction is measured against the per-serving quantity, not the whole recipe."""
+    recipe = make_recipe((1, 400, PRIMARY), servings=4)
+
+    availability = assess_recipe_availability(recipe, {1: 50})
+
+    assert availability.ingredients[0].fraction_available == pytest.approx(0.5)
+
+
+def test_missing_still_means_none_on_hand_for_multi_serving_recipes():
+    """Per-serving scaling does not change the exclusion rule: zero on hand is missing."""
+    recipe = make_recipe((1, 400, PRIMARY), (2, 200, PRIMARY), servings=4)
+
+    availability = assess_recipe_availability(recipe, {})
+
+    assert not availability.is_eligible
+
+
+def test_non_positive_servings_is_rejected():
+    """A recipe with zero servings raises instead of dividing by zero."""
+    with pytest.raises(InvalidInputError):
+        assess_recipe_availability(make_recipe((1, 100, PRIMARY), servings=0), {1: 100})

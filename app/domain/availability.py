@@ -41,11 +41,13 @@ class RecipeAvailability(NamedTuple):
 def assess_recipe_availability(
     recipe: Recipe, inventory_totals: dict[int, float]
 ) -> RecipeAvailability:
-    """Assess how much of a recipe can be made from current inventory.
+    """Assess how much of one serving of a recipe can be made from current inventory.
 
-    The score is the average of each ingredient's fraction on hand (capped at 1), weighted by
-    role importance. A recipe is ineligible when more than one PRIMARY ingredient is missing;
-    missing SUPPORTING or OPTIONAL ingredients only lower the score.
+    Recommendations describe cooking one serving, so each ingredient is judged against its
+    per-serving quantity (``quantity / recipe.servings``). The score is the average of each
+    ingredient's fraction on hand (capped at 1), weighted by role importance. A recipe is
+    ineligible when more than one PRIMARY ingredient is missing; missing SUPPORTING or OPTIONAL
+    ingredients only lower the score.
 
     Args:
         recipe: The recipe to assess. Its ``recipe_ingredients`` must be loadable.
@@ -56,14 +58,16 @@ def assess_recipe_availability(
         Per-ingredient availability, the 0-1 availability score, and eligibility.
 
     Raises:
-        InvalidInputError: If the recipe has no ingredients or a non-positive quantity.
+        InvalidInputError: If the recipe has no ingredients, a non-positive quantity, or
+            non-positive servings.
     """
     validate_recipe(recipe)
 
     ingredients = []
     for recipe_ingredient in recipe.recipe_ingredients:
         on_hand = inventory_totals.get(recipe_ingredient.ingredient_id, 0.0)
-        fraction = min(on_hand / recipe_ingredient.quantity, 1.0)
+        per_serving = recipe_ingredient.quantity / recipe.servings
+        fraction = min(on_hand / per_serving, 1.0)
         ingredients.append(IngredientAvailability(recipe_ingredient, on_hand, fraction))
 
     total_weight = sum(ROLE_WEIGHTS[i.recipe_ingredient.role] for i in ingredients)
