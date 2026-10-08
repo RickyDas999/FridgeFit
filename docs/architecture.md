@@ -31,6 +31,8 @@ Concurrent writes are not currently a meaningful concern.
 - pytest
 - Ruff for linting, pinned to an exact version and configured in `pyproject.toml`
 - GitHub Actions for CI: lint and tests on every pull request and every push to `main`
+- GitHub Agentic Workflows (`gh-aw`) for an advisory Claude pull-request review. AI review never
+  blocks merging and never writes code; its findings are hypotheses for the developer.
 
 PostgreSQL is a possible future migration only if multi-user deployment or concurrency genuinely
 requires it.
@@ -66,7 +68,8 @@ app/
 ├── persistence/   database setup, enums, SQLAlchemy models
 └── domain/        deterministic business logic and its input validators
 tests/             pytest suite; tests/conftest.py provides an in-memory SQLite session
-.github/workflows/ CI workflow
+.github/workflows/ CI workflow and the advisory Claude review workflow
+AGENTS.md          instructions for the independent CI reviewer
 ```
 
 - Deterministic domain logic stays separate from persistence concerns where practical.

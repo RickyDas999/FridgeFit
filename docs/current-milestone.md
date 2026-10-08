@@ -17,11 +17,11 @@ Last updated: 2026-10-07
    weighted ranking, plus informational recent frequency. Includes the input-validation slice and
    CI setup completed during the milestone.
 
-**Next step: add Codex to the CI pipeline** as an additional review layer, as approved by the
-developer. This is pipeline work, not a feature milestone.
+**Feature development is paused** while an independent, advisory Claude pull-request reviewer is
+integrated into CI. This is pipeline work, not a feature milestone.
 
-**No feature milestone is active.** Do not start new feature work until the developer approves
-the next milestone and its scope.
+**No feature milestone is active.** The next one has not been chosen. Do not start new feature
+work until the developer approves the next milestone and its scope.
 
 ## Implemented
 
@@ -128,6 +128,17 @@ Implementation behavior worth knowing:
 - Ruff is pinned (`ruff==0.16.10`) and configured in `pyproject.toml`.
 - `main` is protected: changes merge only through a pull request with both CI checks passing; no
   approval is required, and the admin can bypass in an emergency.
+- `.github/workflows/claude-review.md` is a GitHub Agentic Workflow (`gh-aw`), compiled into
+  `claude-review.lock.yml`. On every opened, reopened, or updated pull request, an independent
+  Claude reviewer with fresh context reviews the change against `AGENTS.md` and posts one summary
+  comment plus up to 10 inline comments.
+  - Advisory only: the agent job's token is read-only, it has no tool to push, merge, approve, or
+    request changes, it never opens issues, and it is not a required check.
+  - Requires the `ANTHROPIC_API_KEY` repository secret.
+  - After editing the `.md`, recompile with `gh aw compile claude-review` and commit both files.
+- Trust model: Ruff and pytest are deterministic and blocking; the Claude reviewer is
+  fresh-context, nondeterministic, and advisory; the developer makes the final engineering
+  judgment.
 
 ## Intentionally Unimplemented
 
@@ -140,4 +151,3 @@ Implementation behavior worth knowing:
 - Grocery addition and manual inventory correction operations
 - Alembic migrations
 - Docker
-- Agent (Codex) review in CI
