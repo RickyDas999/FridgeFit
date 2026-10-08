@@ -8,7 +8,7 @@ from app.domain.enjoyment import (
     assess_recipe_enjoyment,
     group_ratings_by_recipe,
 )
-from app.domain.freshness import RecipeFreshness, assess_recipe_freshness
+from app.domain.expiry_urgency import RecipeExpiryUrgency, assess_recipe_expiry_urgency
 from app.domain.inventory_aggregation import aggregate_inventory_by_ingredient
 from app.domain.macro_fit import MacroFit, assess_macro_fit
 from app.domain.nutrition_state import RemainingMacros
@@ -22,7 +22,7 @@ from app.persistence.models import InventoryBatch, MealFeedback, MealLog, Recipe
 
 DEFAULT_WEIGHTS = {
     "availability": 0.4,
-    "freshness": 0.3,
+    "expiry_urgency": 0.3,
     "macro_fit": 0.2,
     "enjoyment": 0.1,
 }
@@ -34,7 +34,7 @@ class Recommendation(NamedTuple):
     recipe: Recipe
     score: float
     availability: RecipeAvailability
-    freshness: RecipeFreshness
+    expiry_urgency: RecipeExpiryUrgency
     macro_fit: MacroFit | None
     enjoyment: RecipeEnjoyment
     recent_frequency: RecentFrequency
@@ -71,7 +71,7 @@ def recommend_recipes(
     Args:
         recipes: Candidate recipes. Their ingredients and nutrition data must be loadable.
         batches: Current inventory batches across all ingredients.
-        as_of: The calendar date to recommend for, used to judge freshness.
+        as_of: The calendar date to recommend for, used to judge expiry urgency.
         remaining_macros: Today's remaining macros, as returned by
             ``calculate_remaining_macros``. Pass None when no nutrition goal is in effect yet;
             macro fit is then left out of the ranking.
@@ -101,8 +101,8 @@ def recommend_recipes(
         availability = assess_recipe_availability(recipe, inventory_totals)
         if not availability.is_eligible:
             continue
-        freshness = assess_recipe_freshness(recipe, batches_by_ingredient, as_of)
-        scores = {"availability": availability.score, "freshness": freshness.score}
+        expiry_urgency = assess_recipe_expiry_urgency(recipe, batches_by_ingredient, as_of)
+        scores = {"availability": availability.score, "expiry_urgency": expiry_urgency.score}
 
         macro_fit = None
         if remaining_macros is not None:
@@ -117,7 +117,7 @@ def recommend_recipes(
                 recipe=recipe,
                 score=combine_scores(scores),
                 availability=availability,
-                freshness=freshness,
+                expiry_urgency=expiry_urgency,
                 macro_fit=macro_fit,
                 enjoyment=enjoyment,
                 recent_frequency=assess_recent_frequency(recipe, meal_dates_by_recipe, as_of),

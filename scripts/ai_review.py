@@ -56,7 +56,7 @@ DOC_SECTIONS = (
     (
         (
             "app/domain/availability.py",
-            "app/domain/freshness.py",
+            "app/domain/expiry_urgency.py",
             "app/domain/macro_fit.py",
             "app/domain/enjoyment.py",
             "app/domain/recent_frequency.py",

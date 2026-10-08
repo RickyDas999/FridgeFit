@@ -77,14 +77,14 @@ Implementation behavior worth knowing:
 | Module | Entry point |
 |---|---|
 | `availability.py` | `assess_recipe_availability(recipe, inventory_totals)` |
-| `freshness.py` | `assess_recipe_freshness(recipe, batches_by_ingredient, as_of)` |
+| `expiry_urgency.py` | `assess_recipe_expiry_urgency(recipe, batches_by_ingredient, as_of)` |
 | `macro_fit.py` | `assess_macro_fit(recipe, remaining)` |
 | `enjoyment.py` | `group_ratings_by_recipe(meal_feedback)`, `assess_recipe_enjoyment(recipe, ratings_by_recipe)` |
 | `recent_frequency.py` | `group_meal_dates_by_recipe(meal_logs, as_of)`, `assess_recent_frequency(recipe, meal_dates_by_recipe, as_of)` |
 | `recommendations.py` | `recommend_recipes(recipes, batches, as_of, remaining_macros, meal_feedback, meal_logs)`, `combine_scores(scores)` |
 
 - `recommend_recipes` drops ineligible recipes, scores the rest, and returns `Recommendation`s
-  (recipe, combined score, availability, freshness, macro-fit, enjoyment, and recent-frequency
+  (recipe, combined score, availability, expiry-urgency, macro-fit, enjoyment, and recent-frequency
   details) highest score first.
 - `remaining_macros` is required but may be None (no nutrition goal in effect yet). Macro fit is
   then skipped, `Recommendation.macro_fit` is None, and `combine_scores` rescales the remaining
@@ -93,7 +93,7 @@ Implementation behavior worth knowing:
   always scored (0.5 when unrated), so with a nutrition goal all four weights apply unscaled.
 - `meal_logs` is required and used only for `Recommendation.recent_frequency`; it never affects
   the score.
-- Each `Recommendation.freshness.expired_batches` lists batches past their use-by date, as
+- Each `Recommendation.expiry_urgency.expired_batches` lists batches past their use-by date, as
   warnings.
 
 ### Input validation
@@ -107,7 +107,7 @@ Implementation behavior worth knowing:
     `quantity_needed`; negative quantity overrides;
   - quantity overrides keyed by a RecipeIngredient that is not part of the recipe;
   - FEFO batch lists that mix ingredients;
-  - a `datetime` passed as `as_of` (nutrition state, freshness, recent frequency,
+  - a `datetime` passed as `as_of` (nutrition state, expiry urgency, recent frequency,
     recommendations);
   - ratings that are not whole numbers from 1 to 5.
 - Persistence never imports from `app/domain/`.

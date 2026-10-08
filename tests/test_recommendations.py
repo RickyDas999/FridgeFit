@@ -17,18 +17,18 @@ from app.persistence.models import (
 
 AS_OF = date(2026, 3, 10)
 
-def expected_score(availability, freshness=0.0, enjoyment=0.5):
+def expected_score(availability, expiry_urgency=0.0, enjoyment=0.5):
     """Combined score with no nutrition goal, so macro fit is left out and weights rescale.
 
     Args:
         availability: Availability score.
-        freshness: Freshness score; 0 when no ingredient is dated.
+        expiry_urgency: Expiry urgency score; 0 when no ingredient is dated.
         enjoyment: Enjoyment score; 0.5 for an unrated recipe.
 
     Returns:
         The weighted combined score.
     """
-    return (0.4 * availability + 0.3 * freshness + 0.1 * enjoyment) / 0.8
+    return (0.4 * availability + 0.3 * expiry_urgency + 0.1 * enjoyment) / 0.8
 
 
 # A fully stocked, undated, unrated recipe with no nutrition goal.
@@ -84,7 +84,7 @@ def test_combine_scores_with_one_component_returns_that_score():
 
 def test_combine_scores_rescales_weights_of_present_components():
     """Weights of the components present are rescaled to sum to 1."""
-    combined = combine_scores({"availability": 1.0, "freshness": 0.0})
+    combined = combine_scores({"availability": 1.0, "expiry_urgency": 0.0})
 
     assert combined == pytest.approx(0.4 / 0.7)
 
@@ -127,7 +127,7 @@ def test_batches_of_the_same_ingredient_are_combined():
     assert recommendations[0].score == pytest.approx(FULL_STOCK_SCORE)
 
 
-def test_freshness_ranks_recipe_using_expiring_ingredient_higher():
+def test_expiry_urgency_ranks_recipe_using_expiring_ingredient_higher():
     """Between two fully stocked recipes, the one using an expiring ingredient ranks first."""
     keeps = make_recipe("Keeps", (1, 100, IngredientRole.PRIMARY))
     expiring = make_recipe("Expiring", (2, 100, IngredientRole.PRIMARY))
@@ -145,7 +145,7 @@ def test_recommendation_carries_expired_batch_warnings():
 
     recommendation = recommend_recipes([recipe], [expired], AS_OF, None, [], [])[0]
 
-    assert recommendation.freshness.expired_batches == [expired]
+    assert recommendation.expiry_urgency.expired_batches == [expired]
     assert recommendation.score == pytest.approx(FULL_STOCK_SCORE)
 
 

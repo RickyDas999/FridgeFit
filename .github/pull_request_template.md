@@ -33,7 +33,7 @@ Include:
 - any manual verification performed.
 
 Example:
-- Added 6 tests in tests/test_freshness.py
+- Added 6 tests in tests/test_expiry_urgency.py
 - pytest: 132 passed
 - ruff check .: passed
 -->
