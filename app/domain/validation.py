@@ -133,3 +133,18 @@ def validate_ratings(ratings: Sequence[int]) -> None:
     for rating in ratings:
         if isinstance(rating, bool) or not isinstance(rating, int) or not 1 <= rating <= 5:
             raise InvalidInputError(f"Ratings must be whole numbers from 1 to 5, got {rating!r}")
+
+
+def validate_servings(servings: float) -> None:
+    """Check that a number of servings is a positive number.
+
+    Fractions such as 1.5 are allowed, as is more than a recipe's base serving count.
+
+    Args:
+        servings: The number of servings to check.
+
+    Raises:
+        InvalidInputError: If servings is not a positive number.
+    """
+    if isinstance(servings, bool) or not isinstance(servings, (int, float)) or servings <= 0:
+        raise InvalidInputError(f"Servings must be a positive number, got {servings!r}")

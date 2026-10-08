@@ -1,10 +1,11 @@
+import math
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from app.domain.fefo_consumption import plan_fefo_consumption
 from app.domain.recipe_macros import calculate_recipe_macros
-from app.domain.validation import validate_recipe
+from app.domain.validation import validate_recipe, validate_servings
 from app.persistence.models import MealLog, MealLogIngredient, Recipe
 
 
@@ -30,11 +31,16 @@ def confirm_meal(
     session: Session,
     recipe: Recipe,
     *,
+    servings: float,
     consumed_at: datetime,
     name: str | None = None,
     allow_shortfall: bool = False,
 ) -> MealLog:
     """Atomically log a meal made from a recipe and consume inventory via FEFO.
+
+    Only the servings eaten are made: each ingredient's quantity is scaled by
+    ``servings / recipe.servings``, and both inventory consumption and the logged macros
+    reflect that scaled amount. Leftovers are never created.
 
     Every ingredient's consumption is planned before anything is mutated, so
     a rejected confirmation writes nothing. On success, a MealLog,
@@ -43,39 +49,46 @@ def confirm_meal(
     Args:
         session: Active database session; this function commits it.
         recipe: The recipe that was made.
+        servings: How many servings were made and eaten. Any positive number, including
+            fractions and more than the recipe's base serving count.
         consumed_at: When the meal was eaten. Also used as ``depleted_at``
             for any batch this consumption empties.
         name: Optional meal name; defaults to the recipe's name.
         allow_shortfall: If True, confirm even when inventory is short,
             consuming only what is available. Macros and logged quantities
-            then reflect the amount actually consumed, not the recipe amount.
+            then reflect the amount actually consumed, not the scaled recipe amount.
 
     Returns:
         The committed MealLog.
 
     Raises:
-        InvalidInputError: If the recipe has no ingredients or a non-positive quantity.
+        InvalidInputError: If the recipe is invalid or ``servings`` is not positive.
         InsufficientInventoryError: If any ingredient is short and
             ``allow_shortfall`` is False.
     """
     validate_recipe(recipe)
+    validate_servings(servings)
+    scale = servings / recipe.servings
 
     consumption_plans = {}
     fulfilled_quantities = {}
     shortfalls = {}
 
     for recipe_ingredient in recipe.recipe_ingredients:
+        needed = recipe_ingredient.quantity * scale
         available_batches = [
             b for b in recipe_ingredient.ingredient.batches if b.quantity_remaining > 0
         ]
-        plan = plan_fefo_consumption(available_batches, recipe_ingredient.quantity)
+        plan = plan_fefo_consumption(available_batches, needed)
         fulfilled = sum(consumption.quantity for consumption in plan)
 
         consumption_plans[recipe_ingredient] = plan
         fulfilled_quantities[recipe_ingredient.id] = fulfilled
 
-        if fulfilled < recipe_ingredient.quantity:
-            shortfalls[recipe_ingredient.ingredient_id] = (recipe_ingredient.quantity, fulfilled)
+        # Scaled quantities can be fractional, and summing per-batch draws can land a rounding
+        # error below `needed`; only a real gap counts as a shortfall.
+        if fulfilled < needed and not math.isclose(fulfilled, needed):
+            shortfalls[recipe_ingredient.ingredient_id] = (needed, fulfilled)
 
     if shortfalls and not allow_shortfall:
         raise InsufficientInventoryError(shortfalls)
