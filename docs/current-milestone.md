@@ -50,7 +50,7 @@ Schema details beyond the core domain rules:
 | Current nutrition state | `nutrition_state.py` | `select_applicable_goal`, `calculate_remaining_macros` |
 | Inventory aggregation | `inventory_aggregation.py` | `aggregate_inventory_by_ingredient(batches)` |
 | FEFO consumption | `fefo_consumption.py` | `plan_fefo_consumption(batches, quantity_needed)` |
-| Meal confirmation | `meal_confirmation.py` | `confirm_meal(session, recipe, *, consumed_at, name=None, allow_shortfall=False)` |
+| Meal confirmation | `meal_confirmation.py` | `confirm_meal(session, recipe, *, servings, consumed_at, name=None, allow_shortfall=False)` |
 
 Implementation behavior worth knowing:
 
@@ -61,13 +61,14 @@ Implementation behavior worth knowing:
 - **Inventory aggregation** sums `quantity_remaining` per ingredient.
 - **FEFO planning** is read-only. It returns a plan, and returns a partial plan (not an error) when
   inventory is insufficient.
-- **Meal confirmation** plans every ingredient before mutating anything, then commits the MealLog,
+- **Meal confirmation** scales every ingredient to the required `servings` (cook only what is
+  eaten), plans every ingredient before mutating anything, then commits the MealLog,
   MealLogIngredients, and batch decrements in one transaction.
   - By default, any shortfall raises `InsufficientInventoryError` and nothing is written.
   - With `allow_shortfall=True`, the meal is confirmed anyway because kitchen inventory is an
     estimate. Only available inventory is consumed and batches never go negative. Emptied batches
     get `depleted_at`. `MealLogIngredient.quantity` and the MealLog macros reflect the amount
-    actually consumed, not the recipe's stated amount. An ingredient with nothing available gets no
+    actually consumed, not the scaled recipe amount. An ingredient with nothing available gets no
     MealLogIngredient row.
   - Ingredient roles (PRIMARY/SUPPORTING/OPTIONAL) do not affect confirmation; every ingredient is
     consumed.
@@ -114,7 +115,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-150 tests across `tests/test_models.py` and one test module per domain module. Run with:
+158 tests across `tests/test_models.py` and one test module per domain module. Run with:
 
 ```bash
 .venv/bin/ruff check .
@@ -147,6 +148,12 @@ Implementation behavior worth knowing:
   - Requires the `ANTHROPIC_API_KEY` repository secret; the model is set in the workflow.
 - Trust model: Ruff and pytest are the deterministic source of truth; the single-call Claude
   review is an independent semantic critic; the developer makes the final engineering judgment.
+
+## Known Gaps
+
+- Recommendation availability checks inventory against a recipe's full quantities, while macro
+  fit and meal confirmation work per serving. A recipe can rank as short of stock even when one
+  serving's worth is on hand. Changing this is a recommendation-behavior decision.
 
 ## Intentionally Unimplemented
 

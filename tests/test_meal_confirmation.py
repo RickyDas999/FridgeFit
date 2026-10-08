@@ -104,7 +104,7 @@ def test_confirming_a_meal_creates_a_linked_meal_log_with_derived_macros(session
     session.add_all([recipe, make_batch(chicken, 500)])
     session.commit()
 
-    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
+    meal_log = confirm_meal(session, recipe, servings=2, consumed_at=CONSUMED_AT)
 
     assert meal_log.recipe_id == recipe.id
     assert meal_log.calories == pytest.approx(330)
@@ -119,7 +119,7 @@ def test_confirming_a_meal_records_meal_log_ingredients(session):
     session.add_all([recipe, make_batch(chicken, 500)])
     session.commit()
 
-    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
+    meal_log = confirm_meal(session, recipe, servings=2, consumed_at=CONSUMED_AT)
 
     logged = session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).one()
     assert logged.ingredient_id == chicken.id
@@ -137,7 +137,7 @@ def test_confirming_a_meal_consumes_earliest_expiring_batch_first(session):
     session.add_all([recipe, expiring_soon, expiring_later])
     session.commit()
 
-    confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
+    confirm_meal(session, recipe, servings=2, consumed_at=CONSUMED_AT)
 
     assert expiring_soon.quantity_remaining == 0
     assert expiring_soon.depleted_at is not None
@@ -153,7 +153,7 @@ def test_insufficient_inventory_raises_and_writes_nothing(session):
     session.commit()
 
     with pytest.raises(InsufficientInventoryError):
-        confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
+        confirm_meal(session, recipe, servings=2, consumed_at=CONSUMED_AT)
 
     assert session.query(MealLog).count() == 0
     assert batch.quantity_remaining == 100
@@ -167,7 +167,9 @@ def test_explicit_override_consumes_only_available_inventory_and_scales_macros(s
     session.add_all([recipe, batch])
     session.commit()
 
-    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT, allow_shortfall=True)
+    meal_log = confirm_meal(
+        session, recipe, servings=2, consumed_at=CONSUMED_AT, allow_shortfall=True
+    )
 
     logged = session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).one()
     assert logged.quantity == 150
@@ -183,7 +185,9 @@ def test_explicit_override_with_zero_available_skips_meal_log_ingredient(session
     session.add(recipe)
     session.commit()
 
-    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT, allow_shortfall=True)
+    meal_log = confirm_meal(
+        session, recipe, servings=2, consumed_at=CONSUMED_AT, allow_shortfall=True
+    )
 
     assert session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).count() == 0
     assert meal_log.calories == pytest.approx(0)
@@ -199,7 +203,9 @@ def test_explicit_override_with_mixed_sufficient_and_short_ingredients(session):
     session.add_all([recipe, make_batch(chicken, 150), make_batch(rice, 500)])
     session.commit()
 
-    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT, allow_shortfall=True)
+    meal_log = confirm_meal(
+        session, recipe, servings=2, consumed_at=CONSUMED_AT, allow_shortfall=True
+    )
 
     logged = {
         mli.ingredient_id: mli.quantity
@@ -218,7 +224,7 @@ def test_confirming_a_meal_with_multiple_ingredients(session):
     session.add_all([recipe, make_batch(chicken, 500), make_batch(rice, 500)])
     session.commit()
 
-    meal_log = confirm_meal(session, recipe, consumed_at=CONSUMED_AT)
+    meal_log = confirm_meal(session, recipe, servings=2, consumed_at=CONSUMED_AT)
 
     logged_ingredient_ids = {
         mli.ingredient_id
@@ -230,6 +236,82 @@ def test_confirming_a_meal_with_multiple_ingredients(session):
 def test_recipe_with_no_ingredients_is_rejected_and_writes_nothing(session):
     """Confirming a recipe with no ingredients raises before anything is written."""
     with pytest.raises(InvalidInputError):
-        confirm_meal(session, make_recipe(), consumed_at=CONSUMED_AT)
+        confirm_meal(session, make_recipe(), servings=1, consumed_at=CONSUMED_AT)
 
     assert session.query(MealLog).count() == 0
+
+
+def test_one_serving_consumes_and_logs_only_that_serving(session):
+    """Confirming 1 of 2 servings uses half the ingredients and logs half the macros."""
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 250, IngredientRole.PRIMARY))
+    batch = make_batch(chicken, 500)
+    session.add_all([recipe, batch])
+    session.commit()
+
+    meal_log = confirm_meal(session, recipe, servings=1, consumed_at=CONSUMED_AT)
+
+    logged = session.query(MealLogIngredient).filter_by(meal_log_id=meal_log.id).one()
+    assert logged.quantity == pytest.approx(125)
+    assert batch.quantity_remaining == pytest.approx(375)
+    # 125g of chicken at 165 kcal per 100g
+    assert meal_log.calories == pytest.approx(165 * 1.25)
+
+
+def test_servings_above_the_recipe_base_scale_up(session):
+    """Confirming 3 servings of a 2-serving recipe makes 1.5 times the quantities."""
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 200, IngredientRole.PRIMARY))
+    batch = make_batch(chicken, 500)
+    session.add_all([recipe, batch])
+    session.commit()
+
+    meal_log = confirm_meal(session, recipe, servings=3, consumed_at=CONSUMED_AT)
+
+    assert batch.quantity_remaining == pytest.approx(200)
+    assert meal_log.calories == pytest.approx(165 * 3)
+
+
+def test_shortfall_is_judged_against_the_scaled_quantity(session):
+    """One serving needs only half the recipe, so stock short of the whole recipe can suffice."""
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 220, IngredientRole.PRIMARY))
+    batch = make_batch(chicken, 150)
+    session.add_all([recipe, batch])
+    session.commit()
+
+    confirm_meal(session, recipe, servings=1, consumed_at=CONSUMED_AT)
+
+    assert batch.quantity_remaining == pytest.approx(40)
+
+
+def test_rounding_error_in_fractional_servings_is_not_a_shortfall(session):
+    """A fractional serving whose batch draws sum a rounding error short still confirms."""
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 220, IngredientRole.PRIMARY))
+    # 1.1 of 2 servings needs 121.00000000000001g; drawing 47.1g + the rest sums to 121.0.
+    first = make_batch(chicken, 47.1, use_by_date=date(2026, 1, 20))
+    second = make_batch(chicken, 1000, use_by_date=date(2026, 2, 20))
+    session.add_all([recipe, first, second])
+    session.commit()
+
+    meal_log = confirm_meal(session, recipe, servings=1.1, consumed_at=CONSUMED_AT)
+
+    assert first.quantity_remaining == 0
+    assert meal_log.calories == pytest.approx(165 * 1.21)
+
+
+@pytest.mark.parametrize("servings", [0, -1, True, "1"])
+def test_invalid_servings_are_rejected_and_write_nothing(session, servings):
+    """Servings must be a positive number; anything else raises before any write."""
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 200, IngredientRole.PRIMARY))
+    batch = make_batch(chicken, 500)
+    session.add_all([recipe, batch])
+    session.commit()
+
+    with pytest.raises(InvalidInputError):
+        confirm_meal(session, recipe, servings=servings, consumed_at=CONSUMED_AT)
+
+    assert session.query(MealLog).count() == 0
+    assert batch.quantity_remaining == 500

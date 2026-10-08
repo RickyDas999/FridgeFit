@@ -70,6 +70,10 @@ For architecture, see `docs/architecture.md`. For what is currently built, see
   recipe amount. The difference from the recipe is derived by comparing RecipeIngredient
   quantities with MealLogIngredient quantities; it is not stored separately.
 - Manual macro-only meals may create a MealLog without MealLogIngredients.
+- Confirming a meal from a recipe states how many servings were made and eaten: any positive
+  number, including fractions and more than the recipe's base serving count. Only that much is
+  made: each ingredient is scaled by `servings / recipe servings`, and both inventory consumption
+  and the logged macros reflect the scaled amount. Leftovers are never created or tracked.
 
 ## Nutrition Goals
 
