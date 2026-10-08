@@ -117,7 +117,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-162 tests across `tests/test_models.py` and one test module per domain module. Run with:
+163 tests across `tests/test_models.py` and one test module per domain module. Run with:
 
 ```bash
 .venv/bin/ruff check .

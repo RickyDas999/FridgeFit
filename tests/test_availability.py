@@ -152,3 +152,16 @@ def test_non_positive_servings_is_rejected():
     """A recipe with zero servings raises instead of dividing by zero."""
     with pytest.raises(InvalidInputError):
         assess_recipe_availability(make_recipe((1, 100, PRIMARY), servings=0), {1: 100})
+
+
+def test_every_role_is_judged_against_its_per_serving_quantity():
+    """SUPPORTING and OPTIONAL ingredients scale per serving just like PRIMARY ones."""
+    recipe = make_recipe(
+        (1, 400, PRIMARY), (2, 200, SUPPORTING), (3, 40, OPTIONAL), servings=4
+    )
+
+    availability = assess_recipe_availability(recipe, {1: 100, 2: 25, 3: 10})
+
+    fractions = [i.fraction_available for i in availability.ingredients]
+    assert fractions == pytest.approx([1.0, 0.5, 1.0])
+    assert availability.score == pytest.approx((3 * 1.0 + 2 * 0.5 + 1 * 1.0) / 6)
