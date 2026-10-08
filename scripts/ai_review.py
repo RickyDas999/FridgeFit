@@ -356,7 +356,6 @@ def review(instructions: str, bundle: str) -> str:
     response = client.messages.create(
         model=model,
         max_tokens=MAX_OUTPUT_TOKENS,
-        temperature=0,
         system=instructions,
         messages=[{"role": "user", "content": bundle}],
     )
