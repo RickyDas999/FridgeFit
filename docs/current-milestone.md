@@ -3,7 +3,7 @@
 Snapshot of the repository's actual state. Update this file whenever a slice or milestone lands.
 If it disagrees with the code, the code is correct and this file is stale.
 
-Last updated: 2026-10-07
+Last updated: 2026-10-09
 
 ---
 
@@ -20,8 +20,63 @@ Last updated: 2026-10-07
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**No feature milestone is active.** The next one has not been chosen. Do not start new feature
-work until the developer approves the next milestone and its scope.
+**Active milestone: V1 HTTP API + Minimal Application Orchestration.** No slice is implemented
+yet. Begin each slice only when the developer approves it. Layering and transaction rules are in
+`docs/architecture.md` § HTTP API and Application Layer.
+
+## Active Milestone: V1 HTTP API + Minimal Application Orchestration
+
+Expose the existing domain logic over HTTP so FridgeFit can be used end to end. Starting baseline:
+163 passing tests, Ruff clean.
+
+### Slices
+
+| # | Slice | Endpoints |
+|---|---|---|
+| 1 | FastAPI foundation and HTTP boundary | `GET /health` |
+| 2 | Ingredients and inventory intake | `POST /ingredients`, `GET /ingredients`, `POST /inventory/batches`, `GET /inventory` |
+| 3 | Recipe write/read boundary | `POST /recipes`, `GET /recipes`, `GET /recipes/{recipe_id}` |
+| 4 | Nutrition goals and nutrition state | `POST /nutrition-goals`, `GET /nutrition-state?as_of=YYYY-MM-DD` |
+| 5 | Recommendation query API | `GET /recommendations?as_of=YYYY-MM-DD` |
+| 6 | Meal confirmation + idempotency + meal-history read | `POST /recipes/{recipe_id}/confirm`, `GET /meal-logs?consumed_on=YYYY-MM-DD` |
+| 7 | Feedback + API milestone closure | `POST /meal-logs/{meal_log_id}/feedback` |
+
+These 14 endpoints are the complete approved V1 surface. Do not add other CRUD endpoints.
+
+Slice notes:
+
+1. App setup, request-scoped session, and mapping `InvalidInputError` and not-found errors to
+   HTTP responses.
+   - Runtime dependencies: FastAPI, Pydantic, Uvicorn. Development/testing dependency: httpx.
+     No Docker.
+   - Database bootstrap: the FastAPI startup (lifespan) may run `Base.metadata.create_all(engine)`
+     to create a fresh SQLite database. This is V1 bootstrap behavior only, not a replacement for
+     migrations; Alembic remains deferred.
+2. Grocery addition creates InventoryBatch rows. `GET /inventory` returns totals aggregated per
+   ingredient (`aggregate_inventory_by_ingredient`).
+3. A recipe is created with its ingredients in one request. Responses include derived macros
+   (`calculate_recipe_macros`); macros are never accepted as input.
+4. Goals are append-only rows with an effective date. Nutrition state returns the applicable goal
+   and the remaining macros for a calendar day; no goal in effect yet is a normal response, not
+   an error.
+5. Wraps `recommend_recipes` and returns each recommendation's score and component details.
+6. An application workflow wraps `confirm_meal` (`servings`, `consumed_at`, optional `name`,
+   `allow_shortfall`) and uses `MealLog.idempotency_key` per `docs/domain-rules.md`. A shortfall
+   without the override returns the per-ingredient shortfall details.
+   - The workflow first looks up an existing MealLog with the request's idempotency key. If one
+     exists, it returns that MealLog without calling `confirm_meal` again.
+   - Otherwise the key is written to the new MealLog in the same commit as the MealLog,
+     MealLogIngredient rows, and inventory consumption, so `confirm_meal` must receive the key.
+   - The first successful operation for a key is authoritative: reusing the key returns the
+     original MealLog and does not re-execute confirmation. V1 stores no request fingerprint and
+     does not compare a retried request body with the original.
+7. One 1–5 rating per MealLog. Closure updates this file, `README.md`, and the AI reviewer's doc
+   excerpt mapping for `app/api/` and `app/application/`.
+
+### Cleanup outside this milestone
+
+- `app/domain/freshness.py` is a stale, unused copy left over from the rename to
+  `expiry_urgency.py`. Remove it in a separate change.
 
 ## Implemented
 
@@ -153,12 +208,19 @@ Implementation behavior worth knowing:
 
 ## Intentionally Unimplemented
 
-- FastAPI / API layer
+Planned in the active milestone: the HTTP API, grocery addition, and use of
+`MealLog.idempotency_key` in meal confirmation.
+
+Deferred beyond this milestone:
+
+- Frontend
+- Authentication and users
 - Nutrition-data API integration
-- Claude API integration
-- Use of `MealLog.idempotency_key` in meal confirmation
+- Runtime Claude meal generation
 - Ranking weights configurable per recommendation request (the defaults are fixed in
   `DEFAULT_WEIGHTS`)
-- Grocery addition and manual inventory correction operations
+- Manual inventory correction
+- Recipe editing and deletion
 - Alembic migrations
-- Docker
+- Docker and deployment
+- Redis, queues, and microservices
