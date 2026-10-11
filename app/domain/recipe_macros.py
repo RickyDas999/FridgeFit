@@ -30,9 +30,9 @@ def calculate_recipe_macros(
             ingredient's ``ingredient`` relationship must be loadable.
         quantity_overrides: Optional mapping of ``RecipeIngredient.id`` to the
             quantity actually used. Ingredients absent from the mapping use
-            the recipe's stated quantity. Keyed by RecipeIngredient rather
-            than Ingredient so a recipe listing the same ingredient twice
-            stays unambiguous.
+            the recipe's stated quantity. Keyed by RecipeIngredient, the
+            recipe's own ingredient line, matching how a recipe stores its
+            quantities.
 
     Returns:
         The summed macros as a RecipeMacros tuple.
