@@ -56,6 +56,7 @@ For architecture, see `docs/architecture.md`. For what is currently built, see
   never be persisted, and domain logic rejects it with an error rather than scoring it.
 - A valid recipe lists each ingredient at most once.
 - A recipe makes a positive number of servings.
+- Recipe names are unique.
 
 ## Meal History
 

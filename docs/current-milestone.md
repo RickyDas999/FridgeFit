@@ -20,7 +20,7 @@ Last updated: 2026-10-11
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–2 are implemented.
+**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–3 are implemented.
 Begin each slice only when the developer approves it. Layering and transaction rules are in
 `docs/architecture.md` § HTTP API and Application Layer.
 
@@ -94,6 +94,7 @@ Schema details beyond the core domain rules:
   domain logic.
 - `MealFeedback`: one 1–5 rating per MealLog, enforced by a unique foreign key.
 - `Recipe.servings` must be positive, enforced by a database check constraint.
+- `Recipe.name` is unique, enforced by a database unique constraint.
 - A SQLAlchemy `before_flush` hook in `models.py` rejects saving a Recipe with no ingredients: a
   new empty recipe, emptying a saved recipe, or deleting its last ingredient.
 
@@ -177,12 +178,14 @@ Implementation behavior worth knowing:
 - Startup (lifespan) creates missing tables; shutdown disposes the engine.
 - `app/api/session.py`: `get_session` gives each request its own Session, closed when the
   request ends; uncommitted changes are discarded. Routes receive it through `SessionDep`.
-- One route module per resource (`ingredients.py`, `inventory.py`), each holding its
+- One route module per resource (`ingredients.py`, `inventory.py`, `recipes.py`), each holding its
   `APIRouter` and Pydantic schemas. Responses are built from ORM objects with
-  `model_validate` (`from_attributes=True`).
+  `model_validate` (`from_attributes=True`), or field by field when they include derived values
+  (recipe macros).
 - Errors: `InvalidInputError` → 422 with `{"detail": <message>}`. Pydantic request validation →
   422 with a list of `loc`/`msg`/`type` errors; the rejected input is never echoed, because
-  values such as `Infinity` cannot be encoded as JSON. Missing resources → 404; unknown paths →
+  values such as `Infinity` cannot be encoded as JSON, and a custom validator's error in `ctx`
+  is returned as its message text. Missing resources → 404; unknown paths →
   404.
 - Request schemas reject `Infinity`/`NaN` (`allow_inf_nan=False`), and request datetimes must be
   naive local time (timezone-aware values → 422), matching the stored datetimes and
@@ -196,10 +199,17 @@ Implementation behavior worth knowing:
     `purchased_at` defaults to now. Unknown `ingredient_id` → 404.
   - `GET /inventory`: total on hand per ingredient (`aggregate_inventory_by_ingredient`), by
     name; ingredients with nothing left are omitted.
+  - `POST /recipes` (201): the recipe and its ingredient lines in one request and one commit.
+    A name that already exists (exact match) → 409. At least one ingredient; a repeated `ingredient_id` → 422 (the domain rule is enforced here,
+    not in the domain layer or database). Unknown ingredients → 404 listing their ids. Client-
+    supplied macros are ignored.
+  - `GET /recipes` (by name) and `GET /recipes/{recipe_id}` (missing → 404). Each recipe
+    includes its ingredient lines (name, unit, quantity, role), `macros` for the whole recipe
+    (derived with `calculate_recipe_macros`), and `macros_per_serving` (`macros / servings`).
 
 ### Tests
 
-184 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+195 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
