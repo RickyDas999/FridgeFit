@@ -20,7 +20,7 @@ Last updated: 2026-10-11
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slice 1 is implemented.
+**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–2 are implemented.
 Begin each slice only when the developer approves it. Layering and transaction rules are in
 `docs/architecture.md` § HTTP API and Application Layer.
 
@@ -175,17 +175,33 @@ Implementation behavior worth knowing:
 - `app/api/main.py`: `create_app(database_url)` builds the app; the module-level `app` uses the
   default SQLite file. Run locally with `.venv/bin/uvicorn app.api.main:app --reload`.
 - Startup (lifespan) creates missing tables; shutdown disposes the engine.
-- `get_session` gives each request its own Session, closed when the request ends; uncommitted
-  changes are discarded. Routes receive it through `SessionDep`.
-- `InvalidInputError` is returned as 422 with `{"detail": <message>}`. Pydantic request
-  validation also returns 422; unknown paths return 404.
-- Implemented endpoints: `GET /health` (also runs `SELECT 1` to confirm the database is
-  reachable).
+- `app/api/session.py`: `get_session` gives each request its own Session, closed when the
+  request ends; uncommitted changes are discarded. Routes receive it through `SessionDep`.
+- One route module per resource (`ingredients.py`, `inventory.py`), each holding its
+  `APIRouter` and Pydantic schemas. Responses are built from ORM objects with
+  `model_validate` (`from_attributes=True`).
+- Errors: `InvalidInputError` → 422 with `{"detail": <message>}`. Pydantic request validation →
+  422 with a list of `loc`/`msg`/`type` errors; the rejected input is never echoed, because
+  values such as `Infinity` cannot be encoded as JSON. Missing resources → 404; unknown paths →
+  404.
+- Request schemas reject `Infinity`/`NaN` (`allow_inf_nan=False`), and request datetimes must be
+  naive local time (timezone-aware values → 422), matching the stored datetimes and
+  calendar-day logic.
+- Implemented endpoints:
+  - `GET /health`: also runs `SELECT 1` to confirm the database is reachable.
+  - `POST /ingredients` (201): `nutrition_updated_at` is set to now by the server. A name that
+    already exists (exact match) → 409.
+  - `GET /ingredients`: all ingredients, by name.
+  - `POST /inventory/batches` (201): `quantity` becomes both initial and remaining quantity;
+    `purchased_at` defaults to now. Unknown `ingredient_id` → 404.
+  - `GET /inventory`: total on hand per ingredient (`aggregate_inventory_by_ingredient`), by
+    name; ingredients with nothing left are omitted.
 
 ### Tests
 
-173 tests across `tests/test_models.py`, `tests/test_api.py`, `tests/test_ai_review.py`, and one
-test module per domain module. Run with:
+184 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
+with:
 
 ```bash
 .venv/bin/ruff check .

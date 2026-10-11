@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
-from typing import Annotated, Iterator
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.orm import Session
 
+from app.api import ingredients, inventory
+from app.api.session import SessionDep
 from app.errors import InvalidInputError
 from app.persistence.database import DATABASE_URL, Base, get_engine, get_session_factory
 
@@ -28,25 +30,6 @@ async def lifespan(app: FastAPI):
     app.state.engine.dispose()
 
 
-def get_session(request: Request) -> Iterator[Session]:
-    """Provide one database session for the duration of a single request.
-
-    The session is closed when the request ends. Anything not committed by then is discarded,
-    so a request that fails partway through writes nothing.
-
-    Args:
-        request: The incoming request, used to reach the app's session factory.
-
-    Yields:
-        An open SQLAlchemy Session.
-    """
-    with request.app.state.session_factory() as session:
-        yield session
-
-
-SessionDep = Annotated[Session, Depends(get_session)]
-
-
 async def handle_invalid_input(_request: Request, exc: InvalidInputError) -> JSONResponse:
     """Translate a domain validation failure into a 422 response.
 
@@ -58,6 +41,25 @@ async def handle_invalid_input(_request: Request, exc: InvalidInputError) -> JSO
         A 422 JSON response whose ``detail`` is the error message.
     """
     return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+async def handle_request_validation(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Return request validation errors as a 422 without echoing the rejected input.
+
+    FastAPI's default handler includes each error's ``input``. That can be a value JSON cannot
+    encode, such as Infinity (which Python's JSON parser accepts), turning a 422 into a 500.
+
+    Args:
+        _request: The request that failed; unused.
+        exc: The validation error raised while parsing the request.
+
+    Returns:
+        A 422 JSON response whose ``detail`` lists each error's location, message, and type.
+    """
+    errors = [{k: v for k, v in error.items() if k != "input"} for error in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
 
 def health(session: SessionDep) -> dict[str, str]:
@@ -86,7 +88,10 @@ def create_app(database_url: str = DATABASE_URL) -> FastAPI:
     app.state.engine = get_engine(database_url)
     app.state.session_factory = get_session_factory(app.state.engine)
     app.add_exception_handler(InvalidInputError, handle_invalid_input)
+    app.add_exception_handler(RequestValidationError, handle_request_validation)
     app.get("/health")(health)
+    app.include_router(ingredients.router)
+    app.include_router(inventory.router)
     return app
 
 

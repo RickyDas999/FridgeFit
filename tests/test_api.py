@@ -1,23 +1,8 @@
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
-from app.api.main import create_app
 from app.errors import InvalidInputError
 from app.persistence.database import Base
-
-
-@pytest.fixture
-def app(tmp_path):
-    """Build an API app bound to a fresh SQLite file in a temporary directory.
-
-    Args:
-        tmp_path: pytest's per-test temporary directory.
-
-    Returns:
-        The FastAPI application.
-    """
-    return create_app(f"sqlite:///{tmp_path / 'test.db'}")
 
 
 def test_health_reports_ok(app):
