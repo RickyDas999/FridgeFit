@@ -54,7 +54,7 @@ jobs:
       - name: Install reviewer dependency
         run: pip install "anthropic==1.12.1"
 
-      - name: Run single-call review
+      - name: Run review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ github.token }}

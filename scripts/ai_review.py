@@ -1,9 +1,10 @@
-"""Single-call Claude semantic review of a FridgeFit pull request.
+"""Claude semantic review of a FridgeFit pull request, with bounded format repair.
 
 CI-only tooling for `.github/workflows/ai-review.yml`. It gathers a bounded review bundle
-deterministically, makes exactly one Anthropic API request, validates the response's structure,
-and writes the comment to a file for the workflow to post. It never writes to the repository or
-the pull request itself.
+deterministically, makes one Anthropic API review request, validates the response's structure,
+and, if it is malformed, sends at most MAX_REPAIR_ATTEMPTS short repair requests before falling
+back to a fixed error comment. It writes the comment to a file for the workflow to post. It
+never writes to the repository or the pull request itself.
 
 It runs from the trusted default branch: `AGENTS.md`, docs, and unchanged test files are read
 from that checkout, while all pull request content is fetched with `gh` and treated as text.
@@ -26,6 +27,8 @@ MAX_OUTPUT_TOKENS = 800
 # A docs-only change at or under this many changed lines is treated as a trivial edit.
 TRIVIAL_DOC_LINES = 4
 MAX_FINDINGS = 3
+# Repair requests allowed after a malformed review, so a run makes at most 1 + this many calls.
+MAX_REPAIR_ATTEMPTS = 2
 SEVERITY_PATTERN = "LOW|MEDIUM|HIGH|BLOCKER|TEST GAP"
 
 # Posted instead of the model's text when it does not follow the required structure. It must
@@ -285,6 +288,11 @@ def validate_review(text: str) -> list[str]:
     problems = []
     if not text.startswith("## AI Review\n"):
         problems.append("does not start with '## AI Review'")
+    # The checks below read only the first match of each line, so a second review block (e.g.
+    # a self-"correction" with a different verdict) would otherwise pass unnoticed.
+    for marker in ("## AI Review", "Status:"):
+        if len(re.findall(rf"^{marker}", text, re.MULTILINE)) > 1:
+            problems.append(f"'{marker}' appears more than once")
 
     status = re.search(r"^Status: (PASS|FINDINGS)$", text, re.MULTILINE)
     count = re.search(r"^Findings: ([0-3])$", text, re.MULTILINE)
@@ -302,8 +310,11 @@ def validate_review(text: str) -> list[str]:
         problems.append("missing '### Findings' or '### Summary' section, or out of order")
         return problems
     findings = text[findings_heading.end():summary_heading.start()].strip()
-    if not text[summary_heading.end():].strip():
+    summary = text[summary_heading.end():].strip()
+    if not summary:
         problems.append("empty Summary section")
+    elif len(summary.splitlines()) > 1:
+        problems.append("Summary is longer than one line")
 
     starts = list(re.finditer(rf"^\d+\. \[({SEVERITY_PATTERN})\] \S", findings, re.MULTILINE))
     if len(starts) > MAX_FINDINGS:
@@ -328,55 +339,91 @@ def validate_review(text: str) -> list[str]:
     return problems
 
 
-def review(instructions: str, bundle: str) -> str:
-    """Make the single Anthropic API request and return the comment to post.
-
-    The response is validated locally against the required structure. A malformed, truncated,
-    or refused response is replaced by a fixed error comment; no second request is made.
+def response_problems(stop_reason: str, text: str) -> list[str]:
+    """List what is wrong with one model response.
 
     Args:
-        instructions: The reviewer contract, sent as the system prompt.
-        bundle: The bounded review bundle, sent as the only user message.
+        stop_reason: Why the model stopped generating.
+        text: The response text, without a surrounding code fence.
+
+    Returns:
+        Every problem found; an empty list means the review can be posted.
+    """
+    if stop_reason == "refusal":
+        return ["the model declined to review"]
+    if stop_reason == "max_tokens":
+        return ["the response hit the output-token limit; it must be shorter"]
+    return validate_review(text)
+
+
+def build_repair_request(previous_response: str, problems: list[str], attempt: int) -> str:
+    """Build the user message asking the model to fix its last rejected response.
+
+    The PR bundle is not resent: the review work is already done, and `AGENTS.md` (the system
+    prompt) tells the model to fix only the structure, keeping or dropping existing findings
+    without adding new ones.
+
+    Args:
+        previous_response: The rejected response, exactly as validated.
+        problems: The validation problems found in it.
+        attempt: Which repair attempt this is, starting at 1.
+
+    Returns:
+        The repair request message.
+    """
+    problem_lines = "\n".join(f"- {problem}" for problem in problems)
+    return (
+        f'<repair_request attempt="{attempt}" max_attempts="{MAX_REPAIR_ATTEMPTS}">\n'
+        f"<problems>\n{problem_lines}\n</problems>\n"
+        f"<previous_response>\n{previous_response}\n</previous_response>\n"
+        f"</repair_request>\n"
+    )
+
+
+def review(client, model: str, instructions: str, bundle: str) -> str:
+    """Review the bundle, repairing a malformed response a bounded number of times.
+
+    Each repair request carries only the latest rejected response and its problems. A refusal
+    is not retried. If no valid review results, a fixed error comment is returned instead.
+
+    Args:
+        client: An `anthropic.Anthropic` client.
+        model: The model to call.
+        instructions: The reviewer contract, sent as the system prompt on every call.
+        bundle: The bounded review bundle, sent as the user message of the first call.
 
     Returns:
         The validated review, or the fixed error comment, followed by a one-line usage footer.
-
-    Raises:
-        RuntimeError: If the model is not configured.
     """
-    import anthropic  # CI-only dependency; not needed for --dry-run
+    message = bundle
+    input_tokens = output_tokens = 0
+    for attempt in range(MAX_REPAIR_ATTEMPTS + 1):
+        response = client.messages.create(
+            model=model,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            system=instructions,
+            messages=[{"role": "user", "content": message}],
+        )
+        input_tokens += response.usage.input_tokens
+        output_tokens += response.usage.output_tokens
+        text = strip_code_fence(
+            "".join(block.text for block in response.content if block.type == "text")
+        )
+        problems = response_problems(response.stop_reason, text)
+        if not problems:
+            break
+        print(f"AI review response {attempt + 1} rejected: " + "; ".join(problems))
+        print("Rejected response:\n" + text)
+        if response.stop_reason == "refusal":
+            break
+        message = build_repair_request(text, problems, attempt + 1)
 
-    model = os.environ.get("AI_REVIEW_MODEL")
-    if not model:
-        raise RuntimeError("AI_REVIEW_MODEL is not set")
-
-    # The only model request. max_retries=1 only re-sends a request that failed at the network
-    # or server; it never re-runs a completed review.
-    client = anthropic.Anthropic(max_retries=1)
-    response = client.messages.create(
-        model=model,
-        max_tokens=MAX_OUTPUT_TOKENS,
-        system=instructions,
-        messages=[{"role": "user", "content": bundle}],
-    )
-
-    text = strip_code_fence(
-        "".join(block.text for block in response.content if block.type == "text")
-    )
-    if response.stop_reason == "refusal":
-        problems = ["the model declined to review"]
-    elif response.stop_reason == "max_tokens":
-        problems = ["the response hit the output-token limit"]
-    else:
-        problems = validate_review(text)
-
+    calls = attempt + 1
     usage = (
-        f"{model} · {response.usage.input_tokens:,} input / "
-        f"{response.usage.output_tokens:,} output tokens"
+        f"{model} · {calls} call{'s' if calls > 1 else ''} · {input_tokens:,} input / "
+        f"{output_tokens:,} output tokens"
     )
     if problems:
-        print("AI review response rejected: " + "; ".join(problems))
-        print("Rejected response:\n" + text)
         return (
             f"{INVALID_RESPONSE_COMMENT}\n<sub>Advisory AI review · {usage} · response rejected "
             f"by local format validation.</sub>\n"
@@ -388,7 +435,7 @@ def review(instructions: str, bundle: str) -> str:
 
 
 def main() -> int:
-    """Gather the bundle for a pull request, review it once, and write the result.
+    """Gather the bundle for a pull request, review it, and write the result.
 
     Returns:
         The process exit code.
@@ -414,7 +461,14 @@ def main() -> int:
         print(f"Review bundle: {size:,} characters (~{size // 4:,} input tokens). {reason}.")
         if args.dry_run:
             return 0
-        comment = review(instructions, bundle)
+        import anthropic  # CI-only dependency; not needed for --dry-run
+
+        model = os.environ.get("AI_REVIEW_MODEL")
+        if not model:
+            raise RuntimeError("AI_REVIEW_MODEL is not set")
+        # max_retries=1 only re-sends a request that failed at the network or server; format
+        # repairs are separate, bounded requests made by review().
+        comment = review(anthropic.Anthropic(max_retries=1), model, instructions, bundle)
 
     if args.output:
         args.output.write_text(comment)

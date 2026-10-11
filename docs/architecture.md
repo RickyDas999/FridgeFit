@@ -33,9 +33,9 @@ Concurrent writes are not currently a meaningful concern.
 - pytest
 - Ruff for linting, pinned to an exact version and configured in `pyproject.toml`
 - GitHub Actions for CI: lint and tests on every pull request and every push to `main`
-- An advisory, single-call Claude review in GitHub Actions, run on request by labeling a pull
-  request `ai-review`. AI review never blocks merging and never writes code; its findings are
-  hypotheses for the developer.
+- An advisory Claude review in GitHub Actions, run on request by labeling a pull request
+  `ai-review`: one review request, plus at most two bounded format-repair requests. AI review
+  never blocks merging and never writes code; its findings are hypotheses for the developer.
 
 PostgreSQL is a possible future migration only if multi-user deployment or concurrency genuinely
 requires it.

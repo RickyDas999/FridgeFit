@@ -184,8 +184,8 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-167 tests across `tests/test_models.py`, `tests/test_api.py`, and one test module per domain
-module. Run with:
+173 tests across `tests/test_models.py`, `tests/test_api.py`, `tests/test_ai_review.py`, and one
+test module per domain module. Run with:
 
 ```bash
 .venv/bin/ruff check .
@@ -206,17 +206,21 @@ module. Run with:
     changed-file list, the diff of human-authored files, unchanged test files for changed
     modules, and relevant doc sections. Generated files are excluded, and the bundle has a hard
     size ceiling.
-  - It makes exactly one Claude API request with no tools, using `AGENTS.md` as the reviewer
+  - It makes one Claude API review request with no tools, using `AGENTS.md` as the reviewer
     contract, and posts one structured PR comment with at most 3 findings. The response is
-    validated locally against that structure; a malformed one is replaced by a fixed
-    `Status: ERROR` comment, with no second request.
+    validated locally against that structure (exactly one review block and a one-line summary).
+  - A malformed or truncated response gets up to `MAX_REPAIR_ATTEMPTS` (2) sequential repair
+    requests. Each carries only a `<repair_request>` with the validation problems and the
+    rejected response, not the bundle; `AGENTS.md` § Repair Requests limits the model to keeping
+    or dropping existing findings. A refusal is not retried. If no valid review results, a fixed
+    `Status: ERROR` comment is posted. The comment footer shows the call count and total tokens.
   - It runs via `pull_request_target` from the trusted default branch and never checks out or
     executes PR-branch code; PR content is fetched with `gh` and treated as text only.
   - Generated-only, trivial documentation, and oversized PRs are skipped without a model call.
   - Advisory only: the workflow can read the repository and comment on the PR, but has no
     contents write and is not a required check.
   - Requires the `ANTHROPIC_API_KEY` repository secret; the model is set in the workflow.
-- Trust model: Ruff and pytest are the deterministic source of truth; the single-call Claude
+- Trust model: Ruff and pytest are the deterministic source of truth; the Claude
   review is an independent semantic critic; the developer makes the final engineering judgment.
 
 ## Intentionally Unimplemented
