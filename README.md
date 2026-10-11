@@ -75,8 +75,8 @@ docs/               architecture, domain rules, and current status
 - **CI** runs Ruff and pytest on Python 3.11 and 3.12 for every pull request. Both checks must
   pass to merge.
 - **AI review** is optional and advisory. Adding the `ai-review` label to a pull request runs a
-  single Claude request that posts one structured review comment, typically costing about a
-  cent. It never blocks merging; its findings are hypotheses for the developer to accept or
+  Claude review that posts one structured review comment, typically costing about a cent. A
+  malformed response gets at most two short repair requests. It never blocks merging; its findings are hypotheses for the developer to accept or
   reject. To preview a pull request's review size without calling the API:
 
   ```bash

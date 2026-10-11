@@ -1,6 +1,6 @@
 # FridgeFit — Independent Reviewer Instructions
 
-The contract for the single-call Claude reviewer that CI runs when a pull request is labeled
+The contract for the Claude reviewer that CI runs when a pull request is labeled
 `ai-review` (`.github/workflows/ai-review.yml`). Local implementation work is governed by
 `CLAUDE.md`; this file governs review only.
 
@@ -114,3 +114,17 @@ None.
 
 No material issues found. Deterministic CI remains the source of truth for lint and test status.
 ```
+
+## Repair Requests
+
+If your review breaks the structure above, you may receive a `<repair_request>` instead of a
+bundle. It contains the `<problems>` local validation found and your `<previous_response>`.
+The review work is done and the bundle is not resent, so fix only the response:
+
+- Keep each finding you still stand behind, with its substance unchanged.
+- Drop any finding your previous response retracted, contradicted, or could not support.
+- Add no new findings.
+- Recount `Findings` and `Highest Severity` after dropping; with none left, return the
+  no-issues review exactly.
+- Return one review in the structure above and nothing else: no corrections, explanations, or
+  second review block.
