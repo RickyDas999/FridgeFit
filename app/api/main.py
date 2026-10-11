@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api import ingredients, inventory
+from app.api import ingredients, inventory, recipes
 from app.api.session import SessionDep
 from app.errors import InvalidInputError
 from app.persistence.database import DATABASE_URL, Base, get_engine, get_session_factory
@@ -59,7 +59,9 @@ async def handle_request_validation(
         A 422 JSON response whose ``detail`` lists each error's location, message, and type.
     """
     errors = [{k: v for k, v in error.items() if k != "input"} for error in exc.errors()]
-    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+    # A custom validator's ValueError sits in ``ctx``; encoded as-is it would become {}.
+    detail = jsonable_encoder(errors, custom_encoder={Exception: str})
+    return JSONResponse(status_code=422, content={"detail": detail})
 
 
 def health(session: SessionDep) -> dict[str, str]:
@@ -92,6 +94,7 @@ def create_app(database_url: str = DATABASE_URL) -> FastAPI:
     app.get("/health")(health)
     app.include_router(ingredients.router)
     app.include_router(inventory.router)
+    app.include_router(recipes.router)
     return app
 
 

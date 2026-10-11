@@ -65,7 +65,7 @@ class Recipe(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String)
+    name: Mapped[str] = mapped_column(String, unique=True)
     instructions: Mapped[list] = mapped_column(JSON)
     source_url: Mapped[str | None] = mapped_column(String, default=None)
     prep_minutes: Mapped[int]

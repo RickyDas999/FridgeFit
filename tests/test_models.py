@@ -172,6 +172,17 @@ def make_recipe_with_ingredient(quantity=200):
     ])
 
 
+def test_duplicate_recipe_name_rejected(session):
+    """The database allows only one Recipe per name."""
+    chicken = make_ingredient()
+    for _ in range(2):
+        session.add(make_recipe(recipe_ingredients=[
+            RecipeIngredient(ingredient=chicken, quantity=200, role=IngredientRole.PRIMARY),
+        ]))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
 def test_recipe_persists_and_retrieves(session):
     """A Recipe round-trips with its JSON instructions intact."""
     session.add(make_recipe_with_ingredient())
