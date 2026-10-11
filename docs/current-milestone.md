@@ -3,7 +3,7 @@
 Snapshot of the repository's actual state. Update this file whenever a slice or milestone lands.
 If it disagrees with the code, the code is correct and this file is stale.
 
-Last updated: 2026-10-09
+Last updated: 2026-10-11
 
 ---
 
@@ -20,8 +20,8 @@ Last updated: 2026-10-09
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: V1 HTTP API + Minimal Application Orchestration.** No slice is implemented
-yet. Begin each slice only when the developer approves it. Layering and transaction rules are in
+**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slice 1 is implemented.
+Begin each slice only when the developer approves it. Layering and transaction rules are in
 `docs/architecture.md` § HTTP API and Application Layer.
 
 ## Active Milestone: V1 HTTP API + Minimal Application Orchestration
@@ -47,7 +47,7 @@ Slice notes:
 
 1. App setup, request-scoped session, and mapping `InvalidInputError` and not-found errors to
    HTTP responses.
-   - Runtime dependencies: FastAPI, Pydantic, Uvicorn. Development/testing dependency: httpx.
+   - Runtime dependencies: FastAPI, Pydantic, Uvicorn. Development/testing dependency: httpx2.
      No Docker.
    - Database bootstrap: the FastAPI startup (lifespan) may run `Base.metadata.create_all(engine)`
      to create a fresh SQLite database. This is V1 bootstrap behavior only, not a replacement for
@@ -170,9 +170,22 @@ Implementation behavior worth knowing:
   - ratings that are not whole numbers from 1 to 5.
 - Persistence never imports from `app/domain/`.
 
+### HTTP API (`app/api/`)
+
+- `app/api/main.py`: `create_app(database_url)` builds the app; the module-level `app` uses the
+  default SQLite file. Run locally with `.venv/bin/uvicorn app.api.main:app --reload`.
+- Startup (lifespan) creates missing tables; shutdown disposes the engine.
+- `get_session` gives each request its own Session, closed when the request ends; uncommitted
+  changes are discarded. Routes receive it through `SessionDep`.
+- `InvalidInputError` is returned as 422 with `{"detail": <message>}`. Pydantic request
+  validation also returns 422; unknown paths return 404.
+- Implemented endpoints: `GET /health` (also runs `SELECT 1` to confirm the database is
+  reachable).
+
 ### Tests
 
-163 tests across `tests/test_models.py` and one test module per domain module. Run with:
+167 tests across `tests/test_models.py`, `tests/test_api.py`, and one test module per domain
+module. Run with:
 
 ```bash
 .venv/bin/ruff check .

@@ -128,5 +128,7 @@ AGENTS.md          contract for the independent AI reviewer
   `before_flush` hook in `models.py`. The current one rejects a Recipe with no ingredients, which
   a constraint cannot check because the Recipe row must exist before its ingredient rows.
 - Recipe instructions are stored in a JSON column.
-- There are no migrations (Alembic is not set up). The test fixture creates the schema with
-  `Base.metadata.create_all`; no application entry point creates it yet.
+- There are no migrations (Alembic is not set up). The test fixture and the API's startup
+  (lifespan) create missing tables with `Base.metadata.create_all`. This never alters existing
+  tables, so a schema change to an existing database needs the database recreated until
+  migrations exist.
