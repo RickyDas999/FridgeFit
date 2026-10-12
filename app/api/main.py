@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api import ingredients, inventory, recipes
+from app.api import ingredients, inventory, nutrition, recipes
 from app.api.session import SessionDep
 from app.errors import InvalidInputError
 from app.persistence.database import DATABASE_URL, Base, get_engine, get_session_factory
@@ -95,6 +95,7 @@ def create_app(database_url: str = DATABASE_URL) -> FastAPI:
     app.include_router(ingredients.router)
     app.include_router(inventory.router)
     app.include_router(recipes.router)
+    app.include_router(nutrition.router)
     return app
 
 

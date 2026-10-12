@@ -70,8 +70,8 @@ app/
 ├── errors.py      InvalidInputError, shared by both layers
 ├── persistence/   database setup, enums, SQLAlchemy models
 ├── domain/        deterministic business logic and its input validators
-├── application/   thin workflow functions spanning persistence + domain (planned)
-└── api/           FastAPI app, routes, Pydantic schemas, error mapping (planned)
+├── application/   thin workflow functions spanning persistence + domain
+└── api/           FastAPI app, routes, Pydantic schemas, error mapping
 tests/             pytest suite; tests/conftest.py provides an in-memory SQLite session
 .github/workflows/ CI workflow and the advisory AI review workflow
 scripts/           CI-only tooling (the AI review helper); not application code
