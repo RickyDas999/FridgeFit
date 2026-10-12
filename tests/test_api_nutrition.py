@@ -73,6 +73,19 @@ def test_remaining_subtracts_only_that_days_meals(app, client):
     )
 
 
+def test_day_boundaries_are_midnight_to_midnight(app, client):
+    """Meals at 00:00 and 23:59:59 count toward the day; 00:00 the next day does not."""
+    client.post("/nutrition-goals", json=GOAL)
+    log_meal(app, datetime(2026, 10, 11, 0, 0), 100, 0, 0, 0)
+    log_meal(app, datetime(2026, 10, 11, 23, 59, 59), 200, 0, 0, 0)
+    log_meal(app, datetime(2026, 10, 12, 0, 0), 400, 0, 0, 0)
+    log_meal(app, datetime(2026, 10, 10, 23, 59, 59), 800, 0, 0, 0)
+
+    response = client.get("/nutrition-state", params={"as_of": "2026-10-11"})
+
+    assert response.json()["remaining"]["calories"] == pytest.approx(2000 - 100 - 200)
+
+
 def test_state_uses_the_latest_goal_on_or_before_the_date(client):
     """A newer goal applies from its effective date; a future goal is ignored."""
     goals = ((2000, "2026-10-01"), (1800, "2026-10-05"), (1500, "2026-11-01"))

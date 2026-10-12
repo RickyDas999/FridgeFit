@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from typing import NamedTuple
 
 from sqlalchemy import select
@@ -20,7 +20,7 @@ class NutritionState(NamedTuple):
 
 
 def get_nutrition_state(session: Session, as_of: date) -> NutritionState:
-    """Load goals and meal history, then derive the nutrition state for one calendar day.
+    """Load goals and the day's meals, then derive the nutrition state for one calendar day.
 
     Args:
         session: An open database session; nothing is written.
@@ -37,7 +37,12 @@ def get_nutrition_state(session: Session, as_of: date) -> NutritionState:
     if goal is None:
         return NutritionState(goal=None, remaining=None)
 
-    # ponytail: loads all meal history and lets the domain pick the day; filter by date in the
-    # query if the history ever grows large.
-    meal_logs = session.scalars(select(MealLog)).all()
+    # Only load the requested day's meals; the domain still applies the calendar-day rule itself.
+    day_start = datetime.combine(as_of, time.min)
+    meal_logs = session.scalars(
+        select(MealLog).where(
+            MealLog.consumed_at >= day_start,
+            MealLog.consumed_at < day_start + timedelta(days=1),
+        )
+    ).all()
     return NutritionState(goal=goal, remaining=calculate_remaining_macros(goals, meal_logs, as_of))

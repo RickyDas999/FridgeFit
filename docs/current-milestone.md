@@ -214,13 +214,14 @@ Implementation behavior worth knowing:
 
 ### Application workflows (`app/application/`)
 
-- `nutrition.py`: `get_nutrition_state(session, as_of)` loads goals and meal history and returns
-  the applicable goal and remaining macros (`select_applicable_goal`,
-  `calculate_remaining_macros`). Used by `GET /nutrition-state`; read-only.
+- `nutrition.py`: `get_nutrition_state(session, as_of)` loads goals and only that day's meals
+  (filtered by `consumed_at` in the query) and returns the applicable goal and remaining macros
+  (`select_applicable_goal`, `calculate_remaining_macros`). Used by `GET /nutrition-state`;
+  read-only.
 
 ### Tests
 
-203 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+204 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
