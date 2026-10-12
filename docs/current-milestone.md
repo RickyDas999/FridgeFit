@@ -20,7 +20,7 @@ Last updated: 2026-10-11
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–4 are implemented.
+**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–5 are implemented.
 Begin each slice only when the developer approves it. Layering and transaction rules are in
 `docs/architecture.md` § HTTP API and Application Layer.
 
@@ -141,7 +141,8 @@ Implementation behavior worth knowing:
 | `recommendations.py` | `recommend_recipes(recipes, batches, as_of, remaining_macros, meal_feedback, recent_meal_logs, last_eaten_by_recipe)`, `combine_scores(scores)` |
 
 - Recommendations describe cooking one serving: availability compares stock with each
-  ingredient's per-serving quantity, and macro fit scores one serving's macros.
+  ingredient's per-serving quantity (reported as `IngredientAvailability.quantity_per_serving`),
+  and macro fit scores one serving's macros.
 - `recommend_recipes` drops ineligible recipes, scores the rest, and returns `Recommendation`s
   (recipe, combined score, availability, expiry-urgency, macro-fit, enjoyment, and recent-frequency
   details) highest score first.
@@ -181,10 +182,10 @@ Implementation behavior worth knowing:
 - Startup (lifespan) creates missing tables; shutdown disposes the engine.
 - `app/api/session.py`: `get_session` gives each request its own Session, closed when the
   request ends; uncommitted changes are discarded. Routes receive it through `SessionDep`.
-- One route module per resource (`ingredients.py`, `inventory.py`, `recipes.py`, `nutrition.py`),
-  each holding its `APIRouter` and Pydantic schemas. Responses are built from ORM objects with
-  `model_validate` (`from_attributes=True`), or field by field when they include derived values
-  (recipe macros).
+- One route module per resource (`ingredients.py`, `inventory.py`, `recipes.py`, `nutrition.py`,
+  `recommendations.py`), each holding its `APIRouter` and Pydantic schemas. Responses are built
+  from ORM objects with `model_validate` (`from_attributes=True`), or field by field when they
+  include derived values (recipe macros, recommendations).
 - Errors: `InvalidInputError` → 422 with `{"detail": <message>}`. Pydantic request validation →
   422 with a list of `loc`/`msg`/`type` errors; the rejected input is never echoed, because
   values such as `Infinity` cannot be encoded as JSON, and a custom validator's error in `ctx`
@@ -214,6 +215,11 @@ Implementation behavior worth knowing:
   - `GET /nutrition-state?as_of=YYYY-MM-DD`: `as_of` defaults to today on the server's clock.
     Returns the applicable `goal` and `remaining` macros for that calendar day; both are null
     when no goal is effective yet (200, not an error).
+  - `GET /recommendations?as_of=YYYY-MM-DD`: `as_of` defaults to today on the server's clock.
+    Eligible recipes, highest score first, each with `score` and its components: availability
+    (per ingredient: `quantity_per_serving`, `quantity_on_hand`, `fraction_available`,
+    `is_missing`), expiry urgency (with expired batches as warnings), macro fit (null without a
+    goal), enjoyment, and recent frequency.
 
 ### Application workflows (`app/application/`)
 
@@ -221,10 +227,15 @@ Implementation behavior worth knowing:
   (filtered by `consumed_at` in the query) and returns the applicable goal and remaining macros
   (`select_applicable_goal`, `calculate_remaining_macros`). Used by `GET /nutrition-state`;
   read-only.
+- `recommendations.py`: `get_recommendations(session, as_of)` loads recipes, batches with stock,
+  remaining macros (via `get_nutrition_state`), all meal feedback, the recent-frequency window's
+  meals, and each recipe's last-eaten date (`MAX(consumed_at) ... GROUP BY recipe_id`), then
+  calls `recommend_recipes`. Meal history is never loaded in full; meal feedback still is
+  (marked `ponytail:`, to be aggregated in SQL later). Read-only.
 
 ### Tests
 
-206 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+212 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 

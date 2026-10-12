@@ -126,6 +126,7 @@ def test_availability_is_judged_for_one_serving():
 
     availability = assess_recipe_availability(recipe, {1: 100})
 
+    assert availability.ingredients[0].quantity_per_serving == 100
     assert availability.ingredients[0].fraction_available == 1.0
     assert availability.score == pytest.approx(1.0)
 

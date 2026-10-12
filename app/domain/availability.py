@@ -15,6 +15,7 @@ class IngredientAvailability(NamedTuple):
     """How much of one recipe ingredient is on hand."""
 
     recipe_ingredient: RecipeIngredient
+    quantity_per_serving: float
     quantity_on_hand: float
     fraction_available: float
 
@@ -68,7 +69,9 @@ def assess_recipe_availability(
         on_hand = inventory_totals.get(recipe_ingredient.ingredient_id, 0.0)
         per_serving = recipe_ingredient.quantity / recipe.servings
         fraction = min(on_hand / per_serving, 1.0)
-        ingredients.append(IngredientAvailability(recipe_ingredient, on_hand, fraction))
+        ingredients.append(
+            IngredientAvailability(recipe_ingredient, per_serving, on_hand, fraction)
+        )
 
     total_weight = sum(ROLE_WEIGHTS[i.recipe_ingredient.role] for i in ingredients)
     score = sum(
