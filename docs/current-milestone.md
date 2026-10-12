@@ -20,7 +20,7 @@ Last updated: 2026-10-11
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–3 are implemented.
+**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–4 are implemented.
 Begin each slice only when the developer approves it. Layering and transaction rules are in
 `docs/architecture.md` § HTTP API and Application Layer.
 
@@ -178,8 +178,8 @@ Implementation behavior worth knowing:
 - Startup (lifespan) creates missing tables; shutdown disposes the engine.
 - `app/api/session.py`: `get_session` gives each request its own Session, closed when the
   request ends; uncommitted changes are discarded. Routes receive it through `SessionDep`.
-- One route module per resource (`ingredients.py`, `inventory.py`, `recipes.py`), each holding its
-  `APIRouter` and Pydantic schemas. Responses are built from ORM objects with
+- One route module per resource (`ingredients.py`, `inventory.py`, `recipes.py`, `nutrition.py`),
+  each holding its `APIRouter` and Pydantic schemas. Responses are built from ORM objects with
   `model_validate` (`from_attributes=True`), or field by field when they include derived values
   (recipe macros).
 - Errors: `InvalidInputError` → 422 with `{"detail": <message>}`. Pydantic request validation →
@@ -200,16 +200,27 @@ Implementation behavior worth knowing:
   - `GET /inventory`: total on hand per ingredient (`aggregate_inventory_by_ingredient`), by
     name; ingredients with nothing left are omitted.
   - `POST /recipes` (201): the recipe and its ingredient lines in one request and one commit.
-    A name that already exists (exact match) → 409. At least one ingredient; a repeated `ingredient_id` → 422 (the domain rule is enforced here,
-    not in the domain layer or database). Unknown ingredients → 404 listing their ids. Client-
-    supplied macros are ignored.
+    A name that already exists (exact match) → 409. At least one ingredient; a repeated
+    `ingredient_id` → 422 (the domain rule is enforced here, not in the domain layer or
+    database). Unknown ingredients → 404 listing their ids. Client-supplied macros are ignored.
   - `GET /recipes` (by name) and `GET /recipes/{recipe_id}` (missing → 404). Each recipe
     includes its ingredient lines (name, unit, quantity, role), `macros` for the whole recipe
     (derived with `calculate_recipe_macros`), and `macros_per_serving` (`macros / servings`).
+  - `POST /nutrition-goals` (201): goals are append-only history; the effective date may be in
+    the future. A second goal on the same effective date → 409.
+  - `GET /nutrition-state?as_of=YYYY-MM-DD`: `as_of` defaults to today on the server's clock.
+    Returns the applicable `goal` and `remaining` macros for that calendar day; both are null
+    when no goal is effective yet (200, not an error).
+
+### Application workflows (`app/application/`)
+
+- `nutrition.py`: `get_nutrition_state(session, as_of)` loads goals and meal history and returns
+  the applicable goal and remaining macros (`select_applicable_goal`,
+  `calculate_remaining_macros`). Used by `GET /nutrition-state`; read-only.
 
 ### Tests
 
-195 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+203 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
