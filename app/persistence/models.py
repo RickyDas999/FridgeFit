@@ -122,6 +122,8 @@ class MealLog(Base):
         back_populates="meal_log"
     )
     recipe: Mapped["Recipe"] = relationship(back_populates="meal_logs")
+    # One-to-one: the unique meal_log_id on MealFeedback allows at most one rating per meal.
+    feedback: Mapped["MealFeedback | None"] = relationship(back_populates="meal_log")
 
 
 class MealLogIngredient(Base):
@@ -176,7 +178,7 @@ class MealFeedback(Base):
     meal_log_id: Mapped[int] = mapped_column(ForeignKey("meal_logs.id"), unique=True)
     rating: Mapped[int]
 
-    meal_log: Mapped["MealLog"] = relationship()
+    meal_log: Mapped["MealLog"] = relationship(back_populates="feedback")
 
 
 @event.listens_for(Session, "before_flush")

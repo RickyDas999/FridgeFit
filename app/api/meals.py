@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.api.session import SessionDep
 from app.application.meals import confirm_recipe_meal
 from app.domain.meal_confirmation import InsufficientInventoryError
-from app.persistence.models import MealLog, Recipe
+from app.persistence.models import MealFeedback, MealLog, Recipe
 
 router = APIRouter(tags=["meals"])
 
@@ -59,6 +59,25 @@ class MealLogResponse(BaseModel):
     fat: float
     idempotency_key: uuid.UUID | None
     ingredients: list[MealLogIngredientResponse]
+    rating: int | None = Field(description="The meal's 1-5 rating; None until it is rated.")
+
+
+class FeedbackCreate(BaseModel):
+    """Request body for rating a meal."""
+
+    # Strict: reject true, "4", and 4.0 rather than coercing them into a rating.
+    rating: int = Field(ge=1, le=5, strict=True, description="Whole number from 1 to 5.")
+
+
+class FeedbackResponse(BaseModel):
+    """A stored meal rating."""
+
+    # Lets model_validate read attributes from a MealFeedback ORM object.
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    meal_log_id: int
+    rating: int
 
 
 def meal_log_response(meal_log: MealLog) -> MealLogResponse:
@@ -88,6 +107,7 @@ def meal_log_response(meal_log: MealLog) -> MealLogResponse:
             )
             for line in meal_log.meal_log_ingredients
         ],
+        rating=meal_log.feedback.rating if meal_log.feedback else None,
     )
 
 
@@ -169,3 +189,33 @@ def list_meal_logs(session: SessionDep, consumed_on: date | None = None) -> list
         .order_by(MealLog.consumed_at, MealLog.id)
     )
     return [meal_log_response(meal_log) for meal_log in meal_logs]
+
+
+@router.post("/meal-logs/{meal_log_id}/feedback", status_code=201)
+def rate_meal(meal_log_id: int, body: FeedbackCreate, session: SessionDep) -> FeedbackResponse:
+    """Rate a logged meal from 1 to 5. Each meal can be rated once.
+
+    Ratings of meals made from a recipe feed that recipe's enjoyment score; ratings of manual
+    meals are stored but count toward no recipe.
+
+    Args:
+        meal_log_id: The meal being rated.
+        body: The rating.
+        session: The request's database session.
+
+    Returns:
+        The stored rating.
+
+    Raises:
+        HTTPException: 404 if the meal does not exist; 409 if it is already rated.
+    """
+    meal_log = session.get(MealLog, meal_log_id)
+    if meal_log is None:
+        raise HTTPException(status_code=404, detail=f"Meal log {meal_log_id} not found")
+    if meal_log.feedback is not None:
+        raise HTTPException(status_code=409, detail=f"Meal log {meal_log_id} is already rated")
+
+    feedback = MealFeedback(meal_log=meal_log, rating=body.rating)
+    session.add(feedback)
+    session.commit()
+    return FeedbackResponse.model_validate(feedback)
