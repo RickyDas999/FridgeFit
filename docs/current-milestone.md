@@ -20,7 +20,7 @@ Last updated: 2026-10-11
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–5 are implemented.
+**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–6 are implemented.
 Begin each slice only when the developer approves it. Layering and transaction rules are in
 `docs/architecture.md` § HTTP API and Application Layer.
 
@@ -185,9 +185,10 @@ Implementation behavior worth knowing:
 - `app/api/session.py`: `get_session` gives each request its own Session, closed when the
   request ends; uncommitted changes are discarded. Routes receive it through `SessionDep`.
 - One route module per resource (`ingredients.py`, `inventory.py`, `recipes.py`, `nutrition.py`,
-  `recommendations.py`), each holding its `APIRouter` and Pydantic schemas. Responses are built
-  from ORM objects with `model_validate` (`from_attributes=True`), or field by field when they
-  include derived values (recipe macros, recommendations).
+  `recommendations.py`, `meals.py`), each holding its `APIRouter` and Pydantic schemas.
+  Responses are built from ORM objects with `model_validate` (`from_attributes=True`), or field
+  by field when they include derived or related values (recipe macros, recommendations, meal
+  ingredients).
 - Errors: `InvalidInputError` → 422 with `{"detail": <message>}`. Pydantic request validation →
   422 with a list of `loc`/`msg`/`type` errors; the rejected input is never echoed, because
   values such as `Infinity` cannot be encoded as JSON, and a custom validator's error in `ctx`
@@ -222,6 +223,15 @@ Implementation behavior worth knowing:
     (per ingredient: `quantity_per_serving`, `quantity_on_hand`, `fraction_available`,
     `is_missing`), expiry urgency (with expired batches as warnings), macro fit (null without a
     goal), enjoyment, and recent frequency.
+  - `POST /recipes/{recipe_id}/confirm`: body `servings` (> 0, fractions allowed),
+    `consumed_at` (naive local time, defaults to now), optional `name`, `allow_shortfall`
+    (default false), and optional `idempotency_key` (UUID). 201 with the new MealLog; 200 with
+    the original MealLog when the key was already confirmed. Missing recipe → 404 (checked
+    before the key). Shortfall without the override → 409 with
+    `{"detail": {"message", "shortfalls": [{ingredient_id, name, quantity_needed,
+    quantity_available}]}}`; nothing is written.
+  - `GET /meal-logs?consumed_on=YYYY-MM-DD`: that day's meals in `consumed_at` order, each with
+    its macro snapshot and ingredient quantities; `consumed_on` defaults to today.
 
 ### Application workflows (`app/application/`)
 
@@ -234,10 +244,15 @@ Implementation behavior worth knowing:
   meals, and each recipe's last-eaten date (`MAX(consumed_at) ... GROUP BY recipe_id`), then
   calls `recommend_recipes`. Meal history is never loaded in full; meal feedback still is
   (marked `ponytail:`, to be aggregated in SQL later). Read-only.
+- `meals.py`: `confirm_recipe_meal(session, recipe, ...)` returns the existing MealLog (with
+  `created=False`) when the idempotency key was already confirmed; otherwise calls
+  `confirm_meal`, which writes the key in its own atomic commit. Concurrent requests with the
+  same new key are not handled: the unique constraint rejects the second one (a 500), so nothing
+  is logged twice.
 
 ### Tests
 
-214 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+223 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
