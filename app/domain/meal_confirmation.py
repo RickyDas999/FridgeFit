@@ -1,4 +1,5 @@
 import math
+import uuid
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -35,6 +36,7 @@ def confirm_meal(
     consumed_at: datetime,
     name: str | None = None,
     allow_shortfall: bool = False,
+    idempotency_key: uuid.UUID | None = None,
 ) -> MealLog:
     """Atomically log a meal made from a recipe and consume inventory via FEFO.
 
@@ -57,6 +59,8 @@ def confirm_meal(
         allow_shortfall: If True, confirm even when inventory is short,
             consuming only what is available. Macros and logged quantities
             then reflect the amount actually consumed, not the scaled recipe amount.
+        idempotency_key: Optional key stored on the MealLog in the same commit, so a retried
+            confirmation can be recognized. Checking for an existing key is the caller's job.
 
     Returns:
         The committed MealLog.
@@ -102,6 +106,7 @@ def confirm_meal(
         carbs=macros.carbs,
         fat=macros.fat,
         consumed_at=consumed_at,
+        idempotency_key=idempotency_key,
     )
     session.add(meal_log)
 
