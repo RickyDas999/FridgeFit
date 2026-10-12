@@ -1,6 +1,13 @@
+from pathlib import Path
 from types import SimpleNamespace
 
-from scripts.ai_review import MAX_REPAIR_ATTEMPTS, review, validate_review
+from scripts.ai_review import (
+    DOC_SECTIONS,
+    MAX_REPAIR_ATTEMPTS,
+    doc_section,
+    review,
+    validate_review,
+)
 
 PASS_REVIEW = """## AI Review
 
@@ -136,3 +143,12 @@ def test_refusal_is_not_retried():
 
     assert len(client.calls) == 1
     assert "Status: ERROR" in comment
+
+
+def test_every_mapped_doc_section_exists(monkeypatch):
+    """Each DOC_SECTIONS heading exists, so a renamed heading cannot silently drop context."""
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])
+
+    missing = [(doc, heading) for _, doc, heading in DOC_SECTIONS if not doc_section(doc, heading)]
+
+    assert missing == []

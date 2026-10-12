@@ -12,7 +12,7 @@ codebase that can be explained end to end.
 
 ## Status
 
-FridgeFit is currently a **tested Python library**, with no API or app to run yet. Implemented:
+FridgeFit is a **single-user HTTP API** (FastAPI, SQLite) with no frontend. Implemented:
 
 - **Persistence**: SQLAlchemy models for ingredients, inventory batches, recipes, meal history,
   nutrition goals, and meal feedback, on SQLite.
@@ -20,10 +20,12 @@ FridgeFit is currently a **tested Python library**, with no API or app to run ye
   first-expire-first-out (FEFO) consumption, and atomic meal confirmation.
 - **Recommendations**: recipes ranked by availability, freshness, macro fit, and enjoyment, with
   recent eating frequency reported for information.
+- **HTTP API**: endpoints to stock the kitchen, add recipes and goals, get recommendations,
+  confirm meals (with optional idempotency keys for safe retries), and rate them.
 
-Not built yet: an API layer, nutrition-data and Claude integrations, and migrations. See
-[`docs/current-milestone.md`](docs/current-milestone.md) for exactly what is implemented and
-what comes next.
+Not built yet: a frontend, authentication, nutrition-data and Claude integrations, and
+migrations. See [`docs/current-milestone.md`](docs/current-milestone.md) for exactly what is
+implemented and what comes next.
 
 ## Getting Started
 
@@ -36,6 +38,14 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 ```
 
+Start the API (it creates `fridgefit.db` on first run):
+
+```bash
+.venv/bin/uvicorn app.api.main:app --reload
+```
+
+Then open <http://127.0.0.1:8000/docs> for interactive documentation of every endpoint.
+
 Run the same checks CI runs:
 
 ```bash
@@ -43,8 +53,24 @@ Run the same checks CI runs:
 .venv/bin/python -m pytest tests/ -v
 ```
 
-The tests are the best place to see the library in use: each domain module has a matching
-`tests/test_<module>.py`.
+Each domain module has a matching `tests/test_<module>.py`, and each API route module a
+`tests/test_api_<resource>.py`.
+
+## API
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | API and database are up |
+| `POST /ingredients`, `GET /ingredients` | Nutrition reference data |
+| `POST /inventory/batches`, `GET /inventory` | Record groceries; see what's on hand |
+| `POST /recipes`, `GET /recipes`, `GET /recipes/{recipe_id}` | Recipes with derived macros |
+| `POST /nutrition-goals`, `GET /nutrition-state?as_of=` | Daily targets and what's left today |
+| `GET /recommendations?as_of=` | What to make, ranked, with the reasons |
+| `POST /recipes/{recipe_id}/confirm` | Log a meal and consume its ingredients |
+| `GET /meal-logs?consumed_on=` | Meals eaten on a day |
+| `POST /meal-logs/{meal_log_id}/feedback` | Rate a meal 1–5 |
+
+Dates are `YYYY-MM-DD` and default to today; datetimes are local time without a timezone.
 
 ## Project Layout
 
@@ -52,7 +78,9 @@ The tests are the best place to see the library in use: each domain module has a
 app/
 ├── errors.py       shared InvalidInputError
 ├── persistence/    database setup, enums, SQLAlchemy models
-└── domain/         deterministic business logic and input validation
+├── domain/         deterministic business logic and input validation
+├── application/    thin workflows combining persistence and domain logic
+└── api/            FastAPI app, routes, and request/response schemas
 tests/              pytest suite, run against an in-memory SQLite database
 scripts/            CI-only tooling (the AI review helper)
 docs/               architecture, domain rules, and current status
@@ -62,7 +90,7 @@ docs/               architecture, domain rules, and current status
 
 | Document | What it covers |
 |---|---|
-| [`docs/architecture.md`](docs/architecture.md) | Stack, infrastructure limits, layering, persistence conventions |
+| [`docs/architecture.md`](docs/architecture.md) | Stack, infrastructure limits, layering, API and transaction rules, persistence conventions |
 | [`docs/domain-rules.md`](docs/domain-rules.md) | Product rules: inventory, recipes, meal history, goals, recommendation scoring |
 | [`docs/current-milestone.md`](docs/current-milestone.md) | What is implemented, what is not, and what is next |
 | [`CLAUDE.md`](CLAUDE.md) | How the AI implementation assistant works in this repository |

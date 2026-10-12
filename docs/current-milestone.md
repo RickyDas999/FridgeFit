@@ -16,68 +16,32 @@ Last updated: 2026-10-11
 2. **Recommendations**: availability, freshness, macro fit, and enjoyment scoring combined into a
    weighted ranking, plus informational recent frequency. Includes the input-validation slice and
    CI setup completed during the milestone.
+3. **V1 HTTP API + Minimal Application Orchestration**: a FastAPI app exposing the domain logic
+   through 14 endpoints (ingredients, inventory intake, recipes, nutrition goals and state,
+   recommendations, idempotent meal confirmation, meal history, and feedback), with thin
+   application workflows where persistence and domain logic meet. Grew the suite from 163 to
+   231 tests.
 
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–6 and Slice 7's
-feedback endpoint are implemented; milestone closure is pending. Begin each slice only when the
-developer approves it. Layering and transaction rules are in `docs/architecture.md` § HTTP API
-and Application Layer.
+**No feature milestone is active.** The next one has not been chosen. Do not start new feature
+work until the developer approves the next milestone and its scope.
 
-## Active Milestone: V1 HTTP API + Minimal Application Orchestration
+## Known Follow-ups
 
-Expose the existing domain logic over HTTP so FridgeFit can be used end to end. Starting baseline:
-163 passing tests, Ruff clean.
-
-### Slices
-
-| # | Slice | Endpoints |
-|---|---|---|
-| 1 | FastAPI foundation and HTTP boundary | `GET /health` |
-| 2 | Ingredients and inventory intake | `POST /ingredients`, `GET /ingredients`, `POST /inventory/batches`, `GET /inventory` |
-| 3 | Recipe write/read boundary | `POST /recipes`, `GET /recipes`, `GET /recipes/{recipe_id}` |
-| 4 | Nutrition goals and nutrition state | `POST /nutrition-goals`, `GET /nutrition-state?as_of=YYYY-MM-DD` |
-| 5 | Recommendation query API | `GET /recommendations?as_of=YYYY-MM-DD` |
-| 6 | Meal confirmation + idempotency + meal-history read | `POST /recipes/{recipe_id}/confirm`, `GET /meal-logs?consumed_on=YYYY-MM-DD` |
-| 7 | Feedback + API milestone closure | `POST /meal-logs/{meal_log_id}/feedback` |
-
-These 14 endpoints are the complete approved V1 surface. Do not add other CRUD endpoints.
-
-Slice notes:
-
-1. App setup, request-scoped session, and mapping `InvalidInputError` and not-found errors to
-   HTTP responses.
-   - Runtime dependencies: FastAPI, Pydantic, Uvicorn. Development/testing dependency: httpx2.
-     No Docker.
-   - Database bootstrap: the FastAPI startup (lifespan) may run `Base.metadata.create_all(engine)`
-     to create a fresh SQLite database. This is V1 bootstrap behavior only, not a replacement for
-     migrations; Alembic remains deferred.
-2. Grocery addition creates InventoryBatch rows. `GET /inventory` returns totals aggregated per
-   ingredient (`aggregate_inventory_by_ingredient`).
-3. A recipe is created with its ingredients in one request. Responses include derived macros
-   (`calculate_recipe_macros`); macros are never accepted as input.
-4. Goals are append-only rows with an effective date. Nutrition state returns the applicable goal
-   and the remaining macros for a calendar day; no goal in effect yet is a normal response, not
-   an error.
-5. Wraps `recommend_recipes` and returns each recommendation's score and component details.
-6. An application workflow wraps `confirm_meal` (`servings`, `consumed_at`, optional `name`,
-   `allow_shortfall`) and uses `MealLog.idempotency_key` per `docs/domain-rules.md`. A shortfall
-   without the override returns the per-ingredient shortfall details.
-   - The workflow first looks up an existing MealLog with the request's idempotency key. If one
-     exists, it returns that MealLog without calling `confirm_meal` again.
-   - Otherwise the key is written to the new MealLog in the same commit as the MealLog,
-     MealLogIngredient rows, and inventory consumption, so `confirm_meal` must receive the key.
-   - The first successful operation for a key is authoritative: reusing the key returns the
-     original MealLog and does not re-execute confirmation. V1 stores no request fingerprint and
-     does not compare a retried request body with the original.
-7. One 1–5 rating per MealLog. Closure updates this file, `README.md`, and the AI reviewer's doc
-   excerpt mapping for `app/api/` and `app/application/`.
-
-### Cleanup outside this milestone
+Deliberate shortcuts and cleanup, recorded so they are not lost:
 
 - `app/domain/freshness.py` is a stale, unused copy left over from the rename to
   `expiry_urgency.py`. Remove it in a separate change.
+- `get_recommendations` loads every MealFeedback row to average ratings; compute per-recipe
+  averages in SQL as history grows.
+- Recipes, their ingredients, and ratings' meals are lazy-loaded (N+1 queries) in
+  `GET /recipes` and recommendations; add `selectinload` if it gets slow.
+- Two concurrent confirmations with the same new idempotency key are not handled: the unique
+  constraint rejects the second (a 500), so nothing is logged twice.
+- New database constraints (e.g. unique recipe names) reach an existing `fridgefit.db` only if it
+  is recreated, because startup's `create_all` never alters tables and Alembic is deferred.
 
 ## Implemented
 
@@ -194,12 +158,11 @@ Implementation behavior worth knowing:
 - Errors: `InvalidInputError` → 422 with `{"detail": <message>}`. Pydantic request validation →
   422 with a list of `loc`/`msg`/`type` errors; the rejected input is never echoed, because
   values such as `Infinity` cannot be encoded as JSON, and a custom validator's error in `ctx`
-  is returned as its message text. Missing resources → 404; unknown paths →
-  404.
+  is returned as its message text. Missing resources → 404; unknown paths → 404.
 - Request schemas reject `Infinity`/`NaN` (`allow_inf_nan=False`), and request datetimes must be
   naive local time (timezone-aware values → 422), matching the stored datetimes and
   calendar-day logic.
-- Implemented endpoints:
+- Endpoints (the complete V1 surface):
   - `GET /health`: also runs `SELECT 1` to confirm the database is reachable.
   - `POST /ingredients` (201): `nutrition_updated_at` is set to now by the server. A name that
     already exists (exact match) → 409.
@@ -258,7 +221,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-230 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+231 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
@@ -299,11 +262,6 @@ with:
   review is an independent semantic critic; the developer makes the final engineering judgment.
 
 ## Intentionally Unimplemented
-
-Planned in the active milestone: the HTTP API, grocery addition, and use of
-`MealLog.idempotency_key` in meal confirmation.
-
-Deferred beyond this milestone:
 
 - Frontend
 - Authentication and users

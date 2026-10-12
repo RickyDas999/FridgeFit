@@ -82,6 +82,11 @@ DOC_SECTIONS = (
     (("app/domain/recipe_macros.py",), "docs/domain-rules.md", "Recipes"),
     (("app/persistence/",), "docs/architecture.md", "Persistence Conventions"),
     (("app/domain/validation.py", "app/errors.py"), "docs/architecture.md", "Code Layout"),
+    (
+        ("app/api/", "app/application/"),
+        "docs/architecture.md",
+        "HTTP API and Application Layer",
+    ),
 )
 
 
