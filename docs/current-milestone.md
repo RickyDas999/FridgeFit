@@ -90,8 +90,7 @@ Schema details beyond the core domain rules:
 - `Recipe.prep_minutes` and `Recipe.servings` (both required).
 - `MealLog.name` (required).
 - `MealLog.recipe_id`: nullable foreign key to the Recipe the meal came from.
-- `MealLog.idempotency_key`: nullable, unique UUID. Present in the schema but not yet used by any
-  domain logic.
+- `MealLog.idempotency_key`: nullable, unique UUID, written by `confirm_meal` when given.
 - `MealFeedback`: one 1–5 rating per MealLog, enforced by a unique foreign key.
 - `Recipe.servings` must be positive, enforced by a database check constraint.
 - `Recipe.name` is unique, enforced by a database unique constraint.
@@ -106,7 +105,7 @@ Schema details beyond the core domain rules:
 | Current nutrition state | `nutrition_state.py` | `select_applicable_goal`, `calculate_remaining_macros` |
 | Inventory aggregation | `inventory_aggregation.py` | `aggregate_inventory_by_ingredient(batches)` |
 | FEFO consumption | `fefo_consumption.py` | `plan_fefo_consumption(batches, quantity_needed)` |
-| Meal confirmation | `meal_confirmation.py` | `confirm_meal(session, recipe, *, servings, consumed_at, name=None, allow_shortfall=False)` |
+| Meal confirmation | `meal_confirmation.py` | `confirm_meal(session, recipe, *, servings, consumed_at, name=None, allow_shortfall=False, idempotency_key=None)` |
 
 Implementation behavior worth knowing:
 
@@ -128,6 +127,9 @@ Implementation behavior worth knowing:
     MealLogIngredient row.
   - Ingredient roles (PRIMARY/SUPPORTING/OPTIONAL) do not affect confirmation; every ingredient is
     consumed.
+  - An optional `idempotency_key` is stored on the MealLog in the same commit. `confirm_meal`
+    does not check for an existing key; that lookup belongs to the caller. A rejected
+    confirmation writes nothing, so its key stays unused.
 
 ### Recommendations (`app/domain/`)
 
@@ -235,7 +237,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-212 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+214 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 

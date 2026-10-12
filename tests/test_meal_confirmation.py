@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, datetime
 
 import pytest
@@ -315,3 +316,40 @@ def test_invalid_servings_are_rejected_and_write_nothing(session, servings):
 
     assert session.query(MealLog).count() == 0
     assert batch.quantity_remaining == 500
+
+
+def test_idempotency_key_is_committed_with_the_meal(session):
+    """The key is stored on the MealLog in the same commit as the inventory it consumed."""
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 200, IngredientRole.PRIMARY))
+    batch = make_batch(chicken, 500)
+    session.add_all([recipe, batch])
+    session.commit()
+    key = uuid.uuid4()
+
+    confirm_meal(session, recipe, servings=2, consumed_at=CONSUMED_AT, idempotency_key=key)
+    session.expire_all()
+
+    stored = session.query(MealLog).one()
+    assert stored.idempotency_key == key
+    assert batch.quantity_remaining == 300
+
+
+def test_failed_confirmation_does_not_use_up_its_idempotency_key(session):
+    """A shortfall writes nothing, so the same key works once inventory is restocked."""
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 200, IngredientRole.PRIMARY))
+    session.add_all([recipe, make_batch(chicken, 50)])
+    session.commit()
+    key = uuid.uuid4()
+
+    with pytest.raises(InsufficientInventoryError):
+        confirm_meal(session, recipe, servings=2, consumed_at=CONSUMED_AT, idempotency_key=key)
+    session.add(make_batch(chicken, 500))
+    session.commit()
+    meal_log = confirm_meal(
+        session, recipe, servings=2, consumed_at=CONSUMED_AT, idempotency_key=key
+    )
+
+    assert meal_log.idempotency_key == key
+    assert session.query(MealLog).count() == 1
