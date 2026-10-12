@@ -137,8 +137,8 @@ Implementation behavior worth knowing:
 | `expiry_urgency.py` | `assess_recipe_expiry_urgency(recipe, batches_by_ingredient, as_of)` |
 | `macro_fit.py` | `assess_macro_fit(recipe, remaining)` |
 | `enjoyment.py` | `group_ratings_by_recipe(meal_feedback)`, `assess_recipe_enjoyment(recipe, ratings_by_recipe)` |
-| `recent_frequency.py` | `group_meal_dates_by_recipe(meal_logs, as_of)`, `assess_recent_frequency(recipe, meal_dates_by_recipe, as_of)` |
-| `recommendations.py` | `recommend_recipes(recipes, batches, as_of, remaining_macros, meal_feedback, meal_logs)`, `combine_scores(scores)` |
+| `recent_frequency.py` | `recent_window_start(as_of)`, `group_meal_dates_by_recipe(meal_logs, as_of)`, `assess_recent_frequency(recipe, meal_dates_by_recipe, last_eaten_by_recipe, as_of)` |
+| `recommendations.py` | `recommend_recipes(recipes, batches, as_of, remaining_macros, meal_feedback, recent_meal_logs, last_eaten_by_recipe)`, `combine_scores(scores)` |
 
 - Recommendations describe cooking one serving: availability compares stock with each
   ingredient's per-serving quantity, and macro fit scores one serving's macros.
@@ -150,8 +150,11 @@ Implementation behavior worth knowing:
   default weights to sum to 1. This is the only case where weights are rescaled.
 - `meal_feedback` is required; pass an empty sequence when nothing has been rated. Enjoyment is
   always scored (0.5 when unrated), so with a nutrition goal all four weights apply unscaled.
-- `meal_logs` is required and used only for `Recommendation.recent_frequency`; it never affects
-  the score.
+- `recent_meal_logs` (meals from `recent_window_start(as_of)` through `as_of`) and
+  `last_eaten_by_recipe` (each recipe's latest meal date from full history, e.g. a
+  `MAX ... GROUP BY` query) are required and used only for `Recommendation.recent_frequency`;
+  they never affect the score. Full meal history is not needed. Dates after `as_of` in either
+  input are ignored.
 - Each `Recommendation.expiry_urgency.expired_batches` lists batches past their use-by date, as
   warnings.
 
@@ -221,7 +224,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-204 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+206 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 

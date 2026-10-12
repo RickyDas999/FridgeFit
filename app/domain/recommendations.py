@@ -62,7 +62,8 @@ def recommend_recipes(
     as_of: date,
     remaining_macros: RemainingMacros | None,
     meal_feedback: Sequence[MealFeedback],
-    meal_logs: Sequence[MealLog],
+    recent_meal_logs: Sequence[MealLog],
+    last_eaten_by_recipe: dict[int, date],
 ) -> list[Recommendation]:
     """Rank recipes by how well they can be made on a given date.
 
@@ -77,8 +78,11 @@ def recommend_recipes(
             macro fit is then left out of the ranking.
         meal_feedback: The user's meal ratings. Each one's ``meal_log`` must be loadable. Pass
             an empty sequence when nothing has been rated yet.
-        meal_logs: The user's meal history, used only to report recent frequency; it never
-            affects the ranking.
+        recent_meal_logs: Meals in the recent-frequency window (from ``recent_window_start``
+            through ``as_of``); older meals may be included but are not needed. Used only to
+            report recent frequency; it never affects the ranking.
+        last_eaten_by_recipe: Mapping of ``recipe_id`` to the latest date it was eaten, from
+            full history. Used only to report recent frequency.
 
     Returns:
         Eligible recipes as Recommendations, highest score first.
@@ -89,7 +93,7 @@ def recommend_recipes(
     """
     validate_calendar_date(as_of)
     ratings_by_recipe = group_ratings_by_recipe(meal_feedback)
-    meal_dates_by_recipe = group_meal_dates_by_recipe(meal_logs, as_of)
+    meal_dates_by_recipe = group_meal_dates_by_recipe(recent_meal_logs, as_of)
 
     inventory_totals = aggregate_inventory_by_ingredient(batches)
     batches_by_ingredient = defaultdict(list)
@@ -120,7 +124,9 @@ def recommend_recipes(
                 expiry_urgency=expiry_urgency,
                 macro_fit=macro_fit,
                 enjoyment=enjoyment,
-                recent_frequency=assess_recent_frequency(recipe, meal_dates_by_recipe, as_of),
+                recent_frequency=assess_recent_frequency(
+                    recipe, meal_dates_by_recipe, last_eaten_by_recipe, as_of
+                ),
             )
         )
 

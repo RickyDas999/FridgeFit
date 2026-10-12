@@ -2,7 +2,11 @@ from datetime import date, datetime, time, timedelta
 
 import pytest
 
-from app.domain.recent_frequency import assess_recent_frequency, group_meal_dates_by_recipe
+from app.domain.recent_frequency import (
+    assess_recent_frequency,
+    group_meal_dates_by_recipe,
+    recent_window_start,
+)
 from app.errors import InvalidInputError
 from app.persistence.models import MealLog, Recipe
 
@@ -35,17 +39,19 @@ def make_recipe(recipe_id=1):
     return Recipe(id=recipe_id, name="Test Recipe", instructions=[], prep_minutes=10, servings=1)
 
 
-def frequency(*meals):
-    """Report recipe 1's recent frequency as of ``AS_OF`` from the given meals.
+def frequency(*meals, last_eaten=None):
+    """Report recipe 1's recent frequency as of ``AS_OF``.
 
     Args:
-        *meals: The meal history.
+        *meals: Recent meals, as the recent-window query would load them.
+        last_eaten: Mapping of ``recipe_id`` to last-eaten date, as the full-history
+            ``MAX ... GROUP BY`` query would return it.
 
     Returns:
         The RecentFrequency for recipe 1.
     """
     meal_dates = group_meal_dates_by_recipe(meals, AS_OF)
-    return assess_recent_frequency(make_recipe(1), meal_dates, AS_OF)
+    return assess_recent_frequency(make_recipe(1), meal_dates, last_eaten or {}, AS_OF)
 
 
 def test_never_eaten_recipe_reports_zero_and_no_date():
@@ -63,25 +69,41 @@ def test_window_covers_today_and_the_six_days_before():
     assert result.times_eaten_recently == 2
 
 
+def test_window_starts_six_days_before_as_of():
+    """The recent window is today plus the six days before it."""
+    assert recent_window_start(AS_OF) == AS_OF - timedelta(days=6)
+
+
 def test_last_eaten_date_looks_beyond_the_window():
     """The last-eaten date comes from full history, even when nothing is recent."""
-    result = frequency(make_meal(20), make_meal(45))
+    result = frequency(last_eaten={1: AS_OF - timedelta(days=20)})
 
     assert result.times_eaten_recently == 0
     assert result.last_eaten_on == AS_OF - timedelta(days=20)
 
 
+def test_recent_meal_newer_than_last_eaten_input_wins():
+    """A recent meal later than the supplied last-eaten date is reported as last eaten."""
+    result = frequency(make_meal(2), last_eaten={1: AS_OF - timedelta(days=20)})
+
+    assert result.last_eaten_on == AS_OF - timedelta(days=2)
+
+
 def test_meals_after_as_of_are_ignored():
-    """Meals dated after the reporting date neither count nor set the last-eaten date."""
-    result = frequency(make_meal(-1), make_meal(3))
+    """Dates after the reporting date neither count nor set the last-eaten date."""
+    result = frequency(
+        make_meal(-1), make_meal(3), last_eaten={1: AS_OF + timedelta(days=1)}
+    )
 
     assert result.times_eaten_recently == 1
     assert result.last_eaten_on == AS_OF - timedelta(days=3)
 
 
 def test_manual_and_other_recipe_meals_are_ignored():
-    """Only meals made from this recipe count toward its frequency."""
-    result = frequency(make_meal(1, recipe_id=None), make_meal(1, recipe_id=2))
+    """Only meals and last-eaten dates for this recipe count toward its frequency."""
+    result = frequency(
+        make_meal(1, recipe_id=None), make_meal(1, recipe_id=2), last_eaten={2: AS_OF}
+    )
 
     assert result.times_eaten_recently == 0
     assert result.last_eaten_on is None
@@ -96,3 +118,5 @@ def test_datetime_as_of_is_rejected():
     """Recent frequency requires a calendar date, not a datetime."""
     with pytest.raises(InvalidInputError):
         group_meal_dates_by_recipe([], datetime(2026, 3, 10))
+    with pytest.raises(InvalidInputError):
+        assess_recent_frequency(make_recipe(1), {}, {}, datetime(2026, 3, 10))
