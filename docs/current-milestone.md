@@ -20,9 +20,10 @@ Last updated: 2026-10-11
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–6 are implemented.
-Begin each slice only when the developer approves it. Layering and transaction rules are in
-`docs/architecture.md` § HTTP API and Application Layer.
+**Active milestone: V1 HTTP API + Minimal Application Orchestration.** Slices 1–6 and Slice 7's
+feedback endpoint are implemented; milestone closure is pending. Begin each slice only when the
+developer approves it. Layering and transaction rules are in `docs/architecture.md` § HTTP API
+and Application Layer.
 
 ## Active Milestone: V1 HTTP API + Minimal Application Orchestration
 
@@ -91,7 +92,8 @@ Schema details beyond the core domain rules:
 - `MealLog.name` (required).
 - `MealLog.recipe_id`: nullable foreign key to the Recipe the meal came from.
 - `MealLog.idempotency_key`: nullable, unique UUID, written by `confirm_meal` when given.
-- `MealFeedback`: one 1–5 rating per MealLog, enforced by a unique foreign key.
+- `MealFeedback`: one 1–5 rating per MealLog, enforced by a unique foreign key. `MealLog.feedback`
+  is the one-to-one relationship back to it (None until rated).
 - `Recipe.servings` must be positive, enforced by a database check constraint.
 - `Recipe.name` is unique, enforced by a database unique constraint.
 - A SQLAlchemy `before_flush` hook in `models.py` rejects saving a Recipe with no ingredients: a
@@ -231,7 +233,11 @@ Implementation behavior worth knowing:
     `{"detail": {"message", "shortfalls": [{ingredient_id, name, quantity_needed,
     quantity_available}]}}`; nothing is written.
   - `GET /meal-logs?consumed_on=YYYY-MM-DD`: that day's meals in `consumed_at` order, each with
-    its macro snapshot and ingredient quantities; `consumed_on` defaults to today.
+    its macro snapshot, ingredient quantities, and `rating` (null until rated); `consumed_on`
+    defaults to today. Meal-log responses from confirmation include `rating` too.
+  - `POST /meal-logs/{meal_log_id}/feedback` (201): body `{"rating": 1-5}`, a strict whole
+    number (`true`, `"4"`, and `4.0` → 422). Missing meal → 404; already rated → 409. Manual
+    meals can be rated; their ratings count toward no recipe.
 
 ### Application workflows (`app/application/`)
 
@@ -252,7 +258,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-223 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+230 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 

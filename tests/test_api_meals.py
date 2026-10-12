@@ -1,6 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 
 import pytest
+
+from app.persistence.models import MealLog
 
 KEY = "8f14e45f-ceea-4c1e-9a6b-2f1c3e5d7a90"
 
@@ -165,3 +167,76 @@ def test_meal_logs_default_to_today(client, stir_fry):
     confirm(client, stir_fry, consumed_at=f"{date.today()}T12:00:00")
 
     assert len(client.get("/meal-logs").json()) == 1
+
+
+def test_rating_a_meal_returns_201_and_shows_on_the_meal(client, stir_fry):
+    """A rating is stored and appears on the meal in GET /meal-logs."""
+    meal_id = confirm(client, stir_fry).json()["id"]
+
+    response = client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": 4})
+
+    assert response.status_code == 201
+    assert response.json() == {"id": response.json()["id"], "meal_log_id": meal_id, "rating": 4}
+    meals = client.get("/meal-logs", params={"consumed_on": "2026-10-11"}).json()
+    assert meals[0]["rating"] == 4
+
+
+def test_unrated_meal_shows_no_rating(client, stir_fry):
+    """A meal nobody has rated reports rating null."""
+    assert confirm(client, stir_fry).json()["rating"] is None
+
+
+def test_second_rating_is_rejected_with_409(client, stir_fry):
+    """A meal can be rated once; a second rating leaves the first unchanged."""
+    meal_id = confirm(client, stir_fry).json()["id"]
+    client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": 4})
+
+    response = client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": 1})
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": f"Meal log {meal_id} is already rated"}
+    meals = client.get("/meal-logs", params={"consumed_on": "2026-10-11"}).json()
+    assert meals[0]["rating"] == 4
+
+
+def test_rating_an_unknown_meal_returns_404(client):
+    """Rating a meal that does not exist returns 404."""
+    response = client.post("/meal-logs/999/feedback", json={"rating": 3})
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Meal log 999 not found"}
+
+
+def test_ratings_must_be_whole_numbers_from_1_to_5(client, stir_fry):
+    """Out-of-range, fractional, string, and boolean ratings are rejected with 422."""
+    meal_id = confirm(client, stir_fry).json()["id"]
+
+    for bad in (0, 6, 4.5, 4.0, "4", True):
+        response = client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": bad})
+        assert response.status_code == 422, bad
+
+
+def test_manual_meals_can_be_rated(app, client):
+    """A meal not made from a recipe can still be rated."""
+    with app.state.session_factory() as session:
+        meal = MealLog(name="Takeout", consumed_at=datetime(2026, 10, 11, 20, 0),
+                       calories=900, protein=30, carbs=100, fat=40)
+        session.add(meal)
+        session.commit()
+        meal_id = meal.id
+
+    response = client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": 5})
+
+    assert response.status_code == 201
+
+
+def test_rating_feeds_the_recipes_enjoyment_score(client, stir_fry):
+    """Rating a recipe's meal changes that recipe's enjoyment in recommendations."""
+    meal_id = confirm(client, stir_fry, servings=0.5).json()["id"]
+
+    client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": 5})
+
+    recommendations = client.get("/recommendations", params={"as_of": "2026-10-11"}).json()
+    assert recommendations[0]["enjoyment"] == {
+        "score": 1.0, "average_rating": 5.0, "rating_count": 1,
+    }
