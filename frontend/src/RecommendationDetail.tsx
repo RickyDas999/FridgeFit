@@ -35,6 +35,20 @@ function RecommendationDetail(props: {
     { label: 'Enjoyment', value: formatScore(enjoyment.score) },
   ]
 
+  const ratingText =
+    enjoyment.rating_count === 0 || enjoyment.average_rating === null
+      ? 'Not rated yet.'
+      : `Rated ${enjoyment.average_rating.toFixed(1)} of 5 across ${enjoyment.rating_count} meal${
+          enjoyment.rating_count > 1 ? 's' : ''
+        }.`
+  const { times_eaten_recently: recent, last_eaten_on: lastEaten } = recent_frequency
+  const eatenText =
+    lastEaten === null
+      ? 'You have not made it before.'
+      : recent === 0
+        ? `Last eaten ${formatDate(lastEaten)}.`
+        : `Eaten ${recent} time${recent === 1 ? '' : 's'} in the last 7 days, most recently ${formatDate(lastEaten)}.`
+
   return (
     <div className="recommendation-detail">
       <LogMeal
@@ -53,84 +67,93 @@ function RecommendationDetail(props: {
           </div>
         ))}
       </dl>
-      <p className="detail">
-        Scores are out of 100 and combined by the backend into this recipe's score of{' '}
+      <p className="muted">
+        Each part is scored out of 100. The backend weighs them into the overall score of{' '}
         {formatScore(recommendation.score)}.
       </p>
 
-      <h3>Ingredients for one serving</h3>
-      <ul className="plain-list">
-        {availability.ingredients.map((item) => {
-          const unit = unitOf(item.ingredient_id)
-          return (
-            <li key={item.ingredient_id}>
-              <span>
-                {item.name} <span className="detail">({item.role})</span>
-              </span>
-              <span className="ingredient-status">
-                <span className="detail">
-                  have {formatQuantity(item.quantity_on_hand, unit)} · need{' '}
-                  {formatQuantity(item.quantity_per_serving, unit)}
-                </span>
-                {item.is_missing ? (
-                  <span className="tag warn">Missing</span>
-                ) : (
-                  item.fraction_available < 1 && (
-                    <span className="tag warn">
-                      Short ({formatScore(item.fraction_available)}%)
-                    </span>
-                  )
-                )}
-              </span>
-            </li>
-          )
-        })}
-      </ul>
+      <h3>For one serving</h3>
+      <table className="ingredients">
+        <thead>
+          <tr>
+            <th scope="col">Ingredient</th>
+            <th scope="col">Need</th>
+            <th scope="col">Have</th>
+          </tr>
+        </thead>
+        <tbody>
+          {availability.ingredients.map((item) => {
+            const unit = unitOf(item.ingredient_id)
+            return (
+              <tr key={item.ingredient_id}>
+                <th scope="row">
+                  {item.name}
+                  <span className="role">{item.role}</span>
+                </th>
+                <td>{formatQuantity(item.quantity_per_serving, unit)}</td>
+                <td>
+                  {formatQuantity(item.quantity_on_hand, unit)}
+                  {item.is_missing ? (
+                    <span className="flag">None</span>
+                  ) : (
+                    item.fraction_available < 1 && (
+                      <span className="flag">{formatScore(item.fraction_available)}% of need</span>
+                    )
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
 
       {expiry_urgency.expired_batches.length > 0 && (
         <>
-          <h3>Past use-by date</h3>
-          <ul className="plain-list">
+          <h3>Past its use-by date</h3>
+          <ul className="expired">
             {expiry_urgency.expired_batches.map((batch) => (
               <li key={batch.batch_id}>
-                <span className="warn-text">{nameOf(batch.ingredient_id)}</span>
-                <span className="detail">use by {formatDate(batch.use_by_date)}</span>
+                {nameOf(batch.ingredient_id)}, use by {formatDate(batch.use_by_date)}
               </li>
             ))}
           </ul>
-          <p className="detail">
-            Expired food still counts as on hand; whether to use it is your call.
+          <p className="muted">
+            Expired food still counts as on hand. Whether to use it is your call.
           </p>
         </>
       )}
 
       <h3>History</h3>
-      <p className="detail">
-        {enjoyment.rating_count === 0 || enjoyment.average_rating === null
-          ? 'Not rated yet.'
-          : `Rated ${enjoyment.average_rating.toFixed(1)}/5 over ${enjoyment.rating_count} meal${
-              enjoyment.rating_count > 1 ? 's' : ''
-            }.`}{' '}
-        {recent_frequency.last_eaten_on === null
-          ? 'Never eaten.'
-          : `Eaten ${recent_frequency.times_eaten_recently}× in the last 7 days; last on ${formatDate(
-              recent_frequency.last_eaten_on,
-            )}.`}
+      <p>
+        {ratingText} {eatenText}
       </p>
 
       <h3>Recipe</h3>
-      {recipe.status === 'loading' && <p className="detail">Loading recipe…</p>}
+      {recipe.status === 'loading' && <p className="muted">Loading recipe…</p>}
       {recipe.status === 'error' && <p className="error-text">{recipe.message}</p>}
       {recipe.status === 'ready' && (
         <>
-          <p className="detail">
-            {recipe.data.prep_minutes} min · makes {recipe.data.servings} serving
-            {recipe.data.servings > 1 ? 's' : ''} · per serving{' '}
-            {Math.round(recipe.data.macros_per_serving.calories)} kcal,{' '}
-            {Math.round(recipe.data.macros_per_serving.protein)} g protein,{' '}
-            {Math.round(recipe.data.macros_per_serving.carbs)} g carbs,{' '}
-            {Math.round(recipe.data.macros_per_serving.fat)} g fat
-          </p>
+          <dl className="recipe-facts">
+            <div>
+              <dt>Prep</dt>
+              <dd>{recipe.data.prep_minutes} min</dd>
+            </div>
+            <div>
+              <dt>Makes</dt>
+              <dd>
+                {recipe.data.servings} serving{recipe.data.servings > 1 ? 's' : ''}
+              </dd>
+            </div>
+            <div>
+              <dt>Per serving</dt>
+              <dd>
+                {Math.round(recipe.data.macros_per_serving.calories)} kcal,{' '}
+                {Math.round(recipe.data.macros_per_serving.protein)} g protein,{' '}
+                {Math.round(recipe.data.macros_per_serving.carbs)} g carbs,{' '}
+                {Math.round(recipe.data.macros_per_serving.fat)} g fat
+              </dd>
+            </div>
+          </dl>
           {recipe.data.instructions.length > 0 && (
             <ol className="instructions">
               {recipe.data.instructions.map((step, index) => (

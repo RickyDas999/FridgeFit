@@ -1,31 +1,57 @@
-:root {
-  --bg: #f6f7f5;
-  --surface: #ffffff;
-  --text: #1d2420;
-  --muted: #5d6862;
-  --border: #dde2de;
-  --accent: #2f7a4f;
-  --ok: #2f7a4f;
-  --warn: #9a6a00;
-  --error: #b3261e;
+/*
+ * FridgeFit visual design: the inside of a fridge. Cool frost and white shelves, deep pine ink,
+ * one basil accent. Warm color is reserved for attention: use-by amber (expiry, shortfalls,
+ * missing ingredients) and tomato (over budget, errors). Rules: docs/architecture.md § Frontend.
+ */
 
-  color: var(--text);
-  background: var(--bg);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+:root {
+  --frost: #eaf0ee; /* page */
+  --shelf: #ffffff; /* main surface */
+  --ink: #18302a;
+  --muted: #526a64;
+  --line: #d3deda;
+  --basil: #23704f; /* accent, meter fill, primary action */
+  --basil-track: #d6e8df; /* lighter step of the accent, for meter tracks */
+  --use-by: #99550a; /* attention */
+  --use-by-wash: #f7ead8;
+  --tomato: #b3361f; /* over budget, errors */
+  --tomato-wash: #f8e1db;
+  --on-accent: #ffffff;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius: 6px;
+
+  color-scheme: light;
+  color: var(--ink);
+  background: var(--frost);
+  font-family: 'Atkinson Hyperlegible Next Variable', system-ui, sans-serif;
+  font-size: 16px;
   line-height: 1.5;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #141816;
-    --surface: #1d2320;
-    --text: #e6ebe7;
-    --muted: #9aa59f;
-    --border: #2e3732;
-    --accent: #6cc293;
-    --ok: #6cc293;
-    --warn: #e0b54a;
-    --error: #f08a80;
+    /* The fridge at night: its own steps, not an inversion. */
+    --frost: #101917;
+    --shelf: #17231f;
+    --ink: #e3ece8;
+    --muted: #97aba4;
+    --line: #2a3a35;
+    --basil: #62c292;
+    --basil-track: #22382f;
+    --use-by: #e3a84f;
+    --use-by-wash: #3a2c17;
+    --tomato: #f08c77;
+    --tomato-wash: #3d1f19;
+    --on-accent: #101917;
+
+    color-scheme: dark;
   }
 }
 
@@ -35,375 +61,590 @@
 
 body {
   margin: 0;
+  background: var(--frost);
 }
 
-.shell {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 32px 16px;
-}
-
-h1 {
+h1,
+h2,
+h3,
+p {
   margin: 0;
-  font-size: 1.75rem;
 }
 
 h2 {
-  margin: 0 0 8px;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+h3 {
+  margin-top: var(--space-5);
+  margin-bottom: var(--space-2);
   font-size: 1rem;
+  font-weight: 700;
 }
 
-.tagline,
-.detail {
+code {
+  font-size: 0.875em;
+}
+
+.muted {
   color: var(--muted);
-  margin: 4px 0;
 }
 
-.card {
-  padding: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  min-width: 0;
+.error-text {
+  color: var(--tomato);
 }
 
-.status {
-  margin: 0;
-  font-weight: 600;
+:focus-visible {
+  outline: 2px solid var(--basil);
+  outline-offset: 2px;
 }
 
-.status.checking {
-  color: var(--warn);
-}
-
-.status.connected {
-  color: var(--ok);
-}
-
-.status.unavailable {
-  color: var(--error);
-}
+/* ---- Controls ---- */
 
 button {
-  padding: 6px 14px;
+  padding: var(--space-2) var(--space-4);
   font: inherit;
-  color: var(--surface);
-  background: var(--accent);
-  border: none;
-  border-radius: 6px;
+  font-weight: 600;
+  color: var(--on-accent);
+  background: var(--basil);
+  border: 1px solid var(--basil);
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
 button:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: default;
 }
 
-code {
-  font-size: 0.9em;
+button.secondary {
+  color: var(--ink);
+  background: transparent;
+  border-color: var(--line);
 }
 
-.error-text {
-  color: var(--error);
+.link-button {
+  padding: 0;
+  font-weight: 600;
+  color: var(--basil);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+input {
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  color: var(--ink);
+  background: var(--shelf);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* ---- Page frame ---- */
+
+.shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-7);
 }
 
 .app-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
+  gap: var(--space-2) var(--space-4);
+  align-items: baseline;
+  margin-bottom: var(--space-5);
+}
+
+.app-header h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.tagline {
+  color: var(--muted);
 }
 
 .health {
   display: flex;
-  gap: 12px;
+  gap: var(--space-2);
   align-items: center;
+  margin-left: auto;
+  font-size: 0.875rem;
+  color: var(--muted);
 }
 
-/* Recommendations on the left, spanning all rows; the other panels stack on the right. */
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.health.connected .health-dot {
+  background: var(--basil);
+}
+
+.health.unavailable .health-dot {
+  background: var(--tomato);
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+}
+
+.banner.success {
+  background: var(--basil-track);
+}
+
+.banner.error {
+  display: block;
+  color: var(--ink);
+  background: var(--tomato-wash);
+}
+
+/* Main shelf on the left; the sidebar sits directly on the page, divided by rules. */
 .dashboard {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+  gap: var(--space-6);
   align-items: start;
 }
 
-.span-rows {
-  grid-row: span 3;
-}
-
-@media (max-width: 720px) {
+@media (max-width: 860px) {
   .dashboard {
     grid-template-columns: minmax(0, 1fr);
   }
-
-  .span-rows {
-    grid-row: auto;
-  }
 }
 
-.macro-list,
-.plain-list,
-.recommendation-list {
+.shelf {
+  padding: var(--space-5);
+  background: var(--shelf);
+  border-radius: 10px;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.shelf > h2 {
+  margin-bottom: var(--space-3);
+}
+
+.side-section + .side-section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+.side-section > h2 {
+  margin-bottom: var(--space-3);
+}
+
+/* ---- Recommendations ---- */
+
+.recommendations {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.macro-list li + li {
-  margin-top: 10px;
+.recommendations > li {
+  border-top: 1px solid var(--line);
 }
 
-.macro-row,
-.plain-list li,
-.recommendation-head {
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
-.bar {
-  height: 6px;
-  margin-top: 4px;
-  background: var(--border);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.bar-fill {
-  height: 100%;
-  background: var(--accent);
-}
-
-.plain-list li {
-  padding: 6px 0;
-  border-top: 1px solid var(--border);
-}
-
-.plain-list li:first-child {
+.recommendations > li:first-child {
   border-top: none;
 }
 
-.recommendation-list {
-  counter-reset: rank;
-}
-
-.recommendation-list li {
-  padding: 12px 0;
-  border-top: 1px solid var(--border);
-  counter-increment: rank;
-}
-
-.recommendation-list li:first-child {
-  border-top: none;
-  padding-top: 0;
-}
-
-.recommendation-name {
-  font-weight: 600;
-}
-
-.recommendation-name::before {
-  content: counter(rank) '. ';
-  color: var(--muted);
-}
-
-.score {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.tag {
-  padding: 1px 8px;
-  font-size: 0.85rem;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-}
-
-.tag.warn {
-  color: var(--warn);
-  border-color: var(--warn);
-}
-
-.warn-text {
-  color: var(--warn);
-}
-
-/* The whole summary is the click target; reset the default button styling. */
+/* The whole summary row is the click target. */
 .recommendation-summary {
-  display: block;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
   width: 100%;
-  padding: 0;
+  padding: var(--space-4) 0;
+  font-weight: 400;
   text-align: left;
   color: inherit;
   background: none;
-  border-radius: 4px;
+  border: none;
+  border-radius: 0;
 }
 
 .recommendation-summary:hover .recommendation-name {
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-.recommendation-summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
+.rank {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
+
+.recommendation-name {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+.score {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--basil);
+}
+
+.facts {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.flag {
+  padding: 0 var(--space-2);
+  color: var(--use-by);
+  background: var(--use-by-wash);
+  border-radius: 4px;
+}
+
+/* The top pick: the one large element on the page. */
+.featured .recommendation-summary {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-5);
+}
+
+.featured .rank {
+  font-size: 1.25rem;
+}
+
+.featured .recommendation-name {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+
+.featured .score {
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+/* ---- Recommendation detail ---- */
 
 .recommendation-detail {
-  margin-top: 12px;
-  padding: 12px;
-  background: var(--bg);
-  border-radius: 6px;
+  margin: var(--space-1) 0 var(--space-5) calc(2rem + var(--space-3));
 }
 
+/* A faint rule above each section, so one section's end never reads as the next one's start. */
 .recommendation-detail h3 {
-  margin: 16px 0 6px;
-  font-size: 0.9rem;
-}
-
-.recommendation-detail h3:first-child {
-  margin-top: 0;
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
 }
 
 .component-scores {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 8px;
-  margin: 0;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
 }
 
 .component-scores div {
-  padding: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--basil-track);
 }
 
 .component-scores dt {
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   color: var(--muted);
 }
 
 .component-scores dd {
   margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.ingredients {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.ingredients th,
+.ingredients td {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.ingredients thead th {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.ingredients tbody th {
   font-weight: 600;
+}
+
+.ingredients td {
   font-variant-numeric: tabular-nums;
 }
 
-.ingredient-status {
+/* The next section's rule closes the table; avoid a doubled line. */
+.ingredients tbody tr:last-child th,
+.ingredients tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ingredients .flag {
+  margin-left: var(--space-2);
+}
+
+.role {
+  margin-left: var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.expired {
+  margin: 0 0 var(--space-1);
+  padding-left: var(--space-5);
+  color: var(--use-by);
+}
+
+.recipe-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  align-items: baseline;
-  justify-content: flex-end;
+  gap: var(--space-2) var(--space-5);
+  margin: 0 0 var(--space-3);
+}
+
+.recipe-facts dt {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.recipe-facts dd {
+  margin: 0;
 }
 
 .instructions {
-  margin: 6px 0 0;
-  padding-left: 20px;
+  margin: 0;
+  padding-left: var(--space-5);
 }
+
+/* ---- Log a meal ---- */
 
 .log-meal {
   display: grid;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--frost);
+  border-radius: var(--radius);
 }
 
 .log-meal label {
   display: grid;
-  gap: 4px;
-  font-size: 0.9rem;
+  gap: var(--space-1);
+  font-weight: 600;
 }
 
 .log-meal input {
-  width: 8rem;
-  padding: 6px 8px;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  width: 7rem;
 }
 
 .form-actions {
   display: flex;
-  gap: 8px;
-}
-
-button.secondary {
-  color: var(--text);
-  background: none;
-  border: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .shortfall {
-  padding: 8px 12px;
-  border: 1px solid var(--warn);
-  border-radius: 6px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--use-by-wash);
+  border-left: 3px solid var(--use-by);
+  border-radius: var(--radius);
 }
 
-.shortfall p {
-  margin: 0 0 4px;
+.shortfall ul {
+  margin: var(--space-2) 0 var(--space-3);
+  padding-left: var(--space-5);
 }
 
-.shortfall button {
-  margin-top: 8px;
-}
+/* ---- Sidebar: today ---- */
 
-.notice {
-  margin: 0 0 16px;
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--ok);
-  border-radius: 6px;
-}
-
-.link-button {
-  padding: 0;
-  color: var(--accent);
-  background: none;
-  text-decoration: underline;
-}
-
-.meal-list li {
+.calories {
+  display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  gap: var(--space-2);
+  align-items: baseline;
+  margin-bottom: var(--space-2);
+}
+
+.calories-figure {
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.calories-figure.over {
+  color: var(--tomato);
+}
+
+.calories-label {
+  color: var(--muted);
+}
+
+/* Meter: the fill carries state; the track is a lighter step of the same hue. */
+.meter {
+  height: 8px;
+  background: var(--basil-track);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  background: var(--basil);
+  border-radius: 4px;
+}
+
+.meter.low {
+  background: var(--use-by-wash);
+}
+
+.meter.low .meter-fill {
+  background: var(--use-by);
+}
+
+.meter.over {
+  background: var(--tomato-wash);
+}
+
+.macro-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.macro-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1) var(--space-3);
+}
+
+.macro-list .meter {
+  grid-column: 1 / -1;
+  height: 6px;
+}
+
+.macro-value {
+  color: var(--muted);
+}
+
+/* ---- Sidebar: meals and inventory ---- */
+
+.meals,
+.inventory {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meals li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.meals li + li {
+  border-top: 1px solid var(--line);
+}
+
+.meal-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.meal-name {
+  font-weight: 600;
+}
+
+.meal-kcal {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.meal-rating {
+  grid-column: 2 / -1;
 }
 
 .rate-meal {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
 }
 
 .rating-buttons {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .rating-button {
-  min-width: 2rem;
-  padding: 2px 8px;
-  color: var(--text);
-  background: none;
-  border: 1px solid var(--border);
+  min-width: 2.25rem;
+  padding: var(--space-1) var(--space-2);
+  color: var(--ink);
+  background: transparent;
+  border-color: var(--line);
 }
 
 .rating-button:hover:not(:disabled) {
-  color: var(--surface);
-  background: var(--accent);
-  border-color: var(--accent);
+  color: var(--on-accent);
+  background: var(--basil);
+  border-color: var(--basil);
+}
+
+.inventory {
+  display: grid;
+}
+
+.inventory li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.quantity {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

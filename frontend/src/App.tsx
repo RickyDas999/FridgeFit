@@ -15,33 +15,30 @@ function App() {
     void refreshHealth()
   }, [])
 
+  const status = health === null ? 'checking' : health.ok ? 'connected' : 'unavailable'
+  const statusText = { checking: 'Connecting…', connected: 'Connected', unavailable: 'Offline' }
+
   return (
     <main className="shell">
       <header className="app-header">
-        <div>
-          <h1>FridgeFit</h1>
-          <p className="tagline">What should I make with what I have?</p>
-        </div>
-        <div className="health" aria-live="polite">
-          {health === null && <span className="status checking">Checking backend…</span>}
-          {health?.ok && <span className="status connected">Backend connected</span>}
-          {health && !health.ok && (
-            <>
-              <span className="status unavailable" title={health.message}>
-                Backend unavailable
-              </span>
-              <button type="button" onClick={refreshHealth}>
-                Check again
-              </button>
-            </>
+        <h1>FridgeFit</h1>
+        <p className="tagline">What should I make with what I have?</p>
+        <p className={`health ${status}`} aria-live="polite">
+          <span className="health-dot" aria-hidden="true" />
+          {statusText[status]}
+          {status === 'unavailable' && (
+            <button type="button" className="link-button" onClick={refreshHealth}>
+              Try again
+            </button>
           )}
-        </div>
+        </p>
       </header>
 
       {health && !health.ok && (
-        <p className="error-text">
-          {health.message} Start it with <code>.venv/bin/uvicorn app.api.main:app</code> (API:{' '}
-          <code>{API_BASE_URL}</code>).
+        <p className="banner error" role="alert">
+          {health.message} Start the API from the repository root with{' '}
+          <code>.venv/bin/uvicorn app.api.main:app --reload</code>, then try again. The app
+          expects it at <code>{API_BASE_URL}</code>.
         </p>
       )}
 
