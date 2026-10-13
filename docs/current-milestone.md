@@ -25,8 +25,8 @@ Last updated: 2026-10-12
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: Minimal Demo Frontend.** No slice is implemented yet. Begin each slice only
-when the developer approves it. Frontend rules are in `docs/architecture.md` § Frontend.
+**Active milestone: Minimal Demo Frontend.** Slice 1 is implemented. Begin each slice only when
+the developer approves it. Frontend rules are in `docs/architecture.md` § Frontend.
 
 ## Active Milestone: Minimal Demo Frontend
 
@@ -205,6 +205,10 @@ Implementation behavior worth knowing:
 - `app/api/main.py`: `create_app(database_url)` builds the app; the module-level `app` uses the
   default SQLite file. Run locally with `.venv/bin/uvicorn app.api.main:app --reload`.
 - Startup (lifespan) creates missing tables; shutdown disposes the engine.
+- CORS (`CORSMiddleware`) allows only the local Vite origins in `LOCAL_FRONTEND_ORIGINS`
+  (`http://localhost:5173`, `http://127.0.0.1:5173`), methods `GET` and `POST`, and request
+  headers `Content-Type` and `Idempotency-Key`; no credentials. Other origins get no CORS
+  headers (preflight → 400).
 - `app/api/session.py`: `get_session` gives each request its own Session, closed when the
   request ends; uncommitted changes are discarded. Routes receive it through `SessionDep`.
 - One route module per resource (`ingredients.py`, `inventory.py`, `recipes.py`, `nutrition.py`,
@@ -278,9 +282,35 @@ Implementation behavior worth knowing:
   same new key are not handled: the unique constraint rejects the second one (a 500), so nothing
   is logged twice.
 
+### Demo seed (`scripts/seed_demo.py`)
+
+- Developer tooling, run from the repository root: `.venv/bin/python scripts/seed_demo.py`.
+- Drops and recreates every table in the app's default database (`fridgefit.db`), so each run
+  gives the same known state and the current schema; then inserts through the ORM (not the
+  HTTP API).
+- All dates are relative to the run: 13 ingredients; 14 batches (chicken due tomorrow and in 5
+  days, spinach due today plus an expired spinach batch, undated staples, no salmon, too few
+  black beans); 6 recipes (fully available, one missing a PRIMARY ingredient, one partly
+  available); a goal effective 30 days ago; 7 past meals with macros from
+  `calculate_recipe_macros` (the rice bowl twice in the last 7 days; today's breakfast
+  unrated, the rest rated 2–5).
+- Past meals do not consume current inventory.
+
+### Frontend (`frontend/`)
+
+- React 19 + TypeScript + Vite 8 (template `react-ts`, ESLint/oxlint and demo assets removed).
+  Runtime dependencies: `react`, `react-dom` only.
+- `src/api.ts` is the API boundary: `API_BASE_URL` from `VITE_API_BASE_URL`, defaulting to
+  `http://127.0.0.1:8000`, and `checkHealth()` calling `GET /health` with native `fetch`. It
+  distinguishes connected, unreachable (network or CORS failure), and error responses.
+- `src/App.tsx` is the shell: it checks the backend on load and shows Connected/Unavailable, the
+  API URL, and a "Check again" button. No product UI yet.
+- `npm run dev` serves it on `http://localhost:5173`; `npm run build` type-checks (`tsc -b`) and
+  builds.
+
 ### Tests
 
-234 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+238 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
@@ -292,7 +322,8 @@ with:
 ### CI
 
 - `.github/workflows/ci.yml` runs `ruff check .` and `pytest` on Python 3.11 and 3.12 for every
-  pull request and every push to `main`.
+  pull request and every push to `main`, plus a separate "Frontend build" job (Node 22) that
+  runs `npm ci` and `npm run build` in `frontend/` from the committed lockfile.
 - Ruff is pinned (`ruff==0.16.10`) and configured in `pyproject.toml`.
 - `main` is protected: changes merge only through a pull request with both CI checks passing; no
   approval is required, and the admin can bypass in an emergency.
@@ -301,8 +332,8 @@ with:
   pushes.
   - `scripts/ai_review.py` gathers a bounded bundle deterministically: PR title, description,
     changed-file list, the diff of human-authored files, unchanged test files for changed
-    modules, and relevant doc sections. Generated files are excluded, and the bundle has a hard
-    size ceiling.
+    modules, and relevant doc sections. Generated files (including `frontend/package-lock.json`)
+    are excluded, and the bundle has a hard size ceiling.
   - It makes one Claude API review request with no tools, using `AGENTS.md` as the reviewer
     contract, and posts one structured PR comment with at most 3 findings. The response is
     validated locally against that structure (exactly one review block and a one-line summary).
