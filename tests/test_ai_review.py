@@ -5,6 +5,7 @@ from scripts.ai_review import (
     DOC_SECTIONS,
     MAX_REPAIR_ATTEMPTS,
     doc_section,
+    is_generated,
     review,
     validate_review,
 )
@@ -152,3 +153,10 @@ def test_every_mapped_doc_section_exists(monkeypatch):
     missing = [(doc, heading) for _, doc, heading in DOC_SECTIONS if not doc_section(doc, heading)]
 
     assert missing == []
+
+
+def test_frontend_lockfile_is_generated_but_frontend_source_is_not():
+    """The npm lockfile is excluded from review; authored frontend files are not."""
+    assert is_generated("frontend/package-lock.json")
+    assert not is_generated("frontend/package.json")
+    assert not is_generated("frontend/src/App.tsx")
