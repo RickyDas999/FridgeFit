@@ -32,8 +32,6 @@ work until the developer approves the next milestone and its scope.
 
 Deliberate shortcuts and cleanup, recorded so they are not lost:
 
-- `app/domain/freshness.py` is a stale, unused copy left over from the rename to
-  `expiry_urgency.py`. Remove it in a separate change.
 - `get_recommendations` loads every MealFeedback row to average ratings; compute per-recipe
   averages in SQL as history grows.
 - Recipes, their ingredients, and ratings' meals are lazy-loaded (N+1 queries) in
