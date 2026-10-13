@@ -12,6 +12,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["httpx2>=2.0", "pytest>=8.0", "ruff==0.16.10"]
 
+[tool.setuptools.packages.find]
+# Only the Python app is installed. Without this, setuptools guesses packages from top-level
+# folders and refuses to build once frontend/ exists alongside app/.
+include = ["app*"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 
