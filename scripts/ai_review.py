@@ -89,6 +89,7 @@ DOC_SECTIONS = (
         "docs/architecture.md",
         "HTTP API and Application Layer",
     ),
+    (("frontend/",), "docs/architecture.md", "Frontend"),
 )
 
 
