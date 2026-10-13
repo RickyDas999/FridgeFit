@@ -70,7 +70,11 @@ function NutritionSummary({ state }: { state: NutritionState }) {
   )
 }
 
-function RecommendationList({ items }: { items: Recommendation[] }) {
+function RecommendationList(props: {
+  items: Recommendation[]
+  onMealLogged: (meal: MealLog, servings: number) => void
+}) {
+  const { items, onMealLogged } = props
   // The recipe whose detail is open; one at a time.
   const [openRecipeId, setOpenRecipeId] = useState<number | null>(null)
 
@@ -111,7 +115,7 @@ function RecommendationList({ items }: { items: Recommendation[] }) {
                 {recent > 0 && <span className="tag">Eaten {recent}× this week</span>}
               </div>
             </button>
-            {isOpen && <RecommendationDetail recommendation={item} />}
+            {isOpen && <RecommendationDetail recommendation={item} onMealLogged={onMealLogged} />}
           </li>
         )
       })}
@@ -157,26 +161,45 @@ function MealList({ meals }: { meals: MealLog[] }) {
 }
 
 function Dashboard() {
-  const nutrition = useResource(getNutritionState)
-  const recommendations = useResource(getRecommendations)
-  const inventory = useResource(getInventory)
-  const meals = useResource(getTodaysMeals)
+  // Bumped after a write so every panel refetches.
+  const [version, setVersion] = useState(0)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  const nutrition = useResource(getNutritionState, version)
+  const recommendations = useResource(getRecommendations, version)
+  const inventory = useResource(getInventory, version)
+  const meals = useResource(getTodaysMeals, version)
+
+  function handleMealLogged(meal: MealLog, servings: number) {
+    setNotice(`Logged ${meal.name} (${servings} serving${servings === 1 ? '' : 's'}).`)
+    setVersion((current) => current + 1)
+  }
 
   return (
-    <div className="dashboard">
-      <Panel title="What to make" state={recommendations} className="span-rows">
-        {(items) => <RecommendationList items={items} />}
-      </Panel>
-      <Panel title="Today's nutrition" state={nutrition}>
-        {(state) => <NutritionSummary state={state} />}
-      </Panel>
-      <Panel title="Eaten today" state={meals}>
-        {(items) => <MealList meals={items} />}
-      </Panel>
-      <Panel title="In the kitchen" state={inventory}>
-        {(items) => <InventoryList items={items} />}
-      </Panel>
-    </div>
+    <>
+      {notice && (
+        <p className="notice" role="status">
+          {notice}{' '}
+          <button type="button" className="link-button" onClick={() => setNotice(null)}>
+            Dismiss
+          </button>
+        </p>
+      )}
+      <div className="dashboard">
+        <Panel title="What to make" state={recommendations} className="span-rows">
+          {(items) => <RecommendationList items={items} onMealLogged={handleMealLogged} />}
+        </Panel>
+        <Panel title="Today's nutrition" state={nutrition}>
+          {(state) => <NutritionSummary state={state} />}
+        </Panel>
+        <Panel title="Eaten today" state={meals}>
+          {(items) => <MealList meals={items} />}
+        </Panel>
+        <Panel title="In the kitchen" state={inventory}>
+          {(items) => <InventoryList items={items} />}
+        </Panel>
+      </div>
+    </>
   )
 }
 

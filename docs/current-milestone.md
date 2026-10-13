@@ -25,7 +25,7 @@ Last updated: 2026-10-12
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: Minimal Demo Frontend.** Slices 1–3 are implemented. Begin each slice only when
+**Active milestone: Minimal Demo Frontend.** Slices 1–4 are implemented. Begin each slice only when
 the developer approves it. Frontend rules are in `docs/architecture.md` § Frontend.
 
 ## Active Milestone: Minimal Demo Frontend
@@ -304,9 +304,13 @@ Implementation behavior worth knowing:
   `http://127.0.0.1:8000`; TypeScript types mirroring the response schemas; `checkHealth()`
   (connected, unreachable — network or CORS failure — or error response); and read fetchers
   `getNutritionState`, `getInventory`, `getRecommendations`, `getTodaysMeals`, `getRecipe`. The
-  dashboard fetchers omit date parameters, so the server's "today" applies.
+  dashboard fetchers omit date parameters, so the server's "today" applies. `confirmMeal()`
+  posts to `/recipes/{id}/confirm` with a caller-supplied `Idempotency-Key` and returns
+  `logged` (201, or 200 when replayed) or `shortfall` (409); other errors become readable
+  messages.
 - `src/useResource.ts`: the `useResource` hook (loading/error/ready for one request, ignoring
-  late responses). `src/format.ts`: display formatting (units, 0–100 scores, times, and
+  late responses). A `reloadToken` argument refetches while keeping the current data on
+  screen. `src/format.ts`: display formatting (units, 0–100 scores, times, and
   calendar dates built from their parts to avoid a UTC off-by-one-day).
 - `src/App.tsx`: header with the backend status (and "Check again" when unavailable), then the
   dashboard.
@@ -323,6 +327,13 @@ Implementation behavior worth knowing:
   enjoyment and recent frequency; and recipe basics — prep time, servings, per-serving macros,
   instructions — from `GET /recipes/{id}`, loaded when the detail opens (which also supplies
   ingredient units).
+- `src/LogMeal.tsx` (Slice 4): "I ate this" in a recommendation's detail opens a servings form
+  (default 1, step 0.5, any amount above 0) and "Log meal". Server time and recipe name are
+  used. Each submission keeps its Idempotency-Key (`crypto.randomUUID()`) until it succeeds, so
+  a retry after a network failure cannot log twice; changing servings starts new keys. The
+  button is disabled while a request is in flight. A shortfall lists what is short (need/have)
+  and offers "Log anyway with what I have" (`allow_shortfall: true`, its own key). On success
+  the dashboard shows "Logged …" and refetches all four panels; the open detail stays open.
 - `npm run dev` serves it on `http://localhost:5173`; `npm run build` type-checks (`tsc -b`) and
   builds.
 

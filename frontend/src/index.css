@@ -314,3 +314,65 @@ code {
   margin: 6px 0 0;
   padding-left: 20px;
 }
+
+.log-meal {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.log-meal label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+
+.log-meal input {
+  width: 8rem;
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+button.secondary {
+  color: var(--text);
+  background: none;
+  border: 1px solid var(--border);
+}
+
+.shortfall {
+  padding: 8px 12px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+}
+
+.shortfall p {
+  margin: 0 0 4px;
+}
+
+.shortfall button {
+  margin-top: 8px;
+}
+
+.notice {
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--ok);
+  border-radius: 6px;
+}
+
+.link-button {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  text-decoration: underline;
+}
