@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
+import { BackendUnreachable } from './api'
 
 export type Loadable<T> =
   | { status: 'loading' }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string; offline: boolean }
   | { status: 'ready'; data: T }
 
 /**
@@ -20,7 +21,13 @@ export function useResource<T>(load: () => Promise<T>, reloadToken = 0): Loadabl
     let active = true
     load().then(
       (data) => active && setState({ status: 'ready', data }),
-      (error: Error) => active && setState({ status: 'error', message: error.message }),
+      (error: Error) =>
+        active &&
+        setState({
+          status: 'error',
+          message: error.message,
+          offline: error instanceof BackendUnreachable,
+        }),
     )
     return () => {
       active = false

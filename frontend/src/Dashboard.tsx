@@ -27,7 +27,13 @@ function Section<T>(props: {
     <section className={className}>
       <h2>{title}</h2>
       {state.status === 'loading' && <p className="muted">Loading…</p>}
-      {state.status === 'error' && <p className="error-text">{state.message}</p>}
+      {/* When the API is down, the header banner explains it once; sections just wait. */}
+      {state.status === 'error' &&
+        (state.offline ? (
+          <p className="muted">Waiting for the API…</p>
+        ) : (
+          <p className="error-text">{state.message}</p>
+        ))}
       {state.status === 'ready' && children(state.data)}
     </section>
   )
