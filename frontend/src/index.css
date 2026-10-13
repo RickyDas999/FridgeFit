@@ -60,11 +60,11 @@ h2 {
 }
 
 .card {
-  margin-top: 24px;
   padding: 16px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+  min-width: 0;
 }
 
 .status {
@@ -85,7 +85,6 @@ h2 {
 }
 
 button {
-  margin-top: 12px;
   padding: 6px 14px;
   font: inherit;
   color: var(--surface);
@@ -98,4 +97,142 @@ button {
 button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+code {
+  font-size: 0.9em;
+}
+
+.error-text {
+  color: var(--error);
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.health {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Recommendations on the left, spanning all rows; the other panels stack on the right. */
+.dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.span-rows {
+  grid-row: span 3;
+}
+
+@media (max-width: 720px) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .span-rows {
+    grid-row: auto;
+  }
+}
+
+.macro-list,
+.plain-list,
+.recommendation-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.macro-list li + li {
+  margin-top: 10px;
+}
+
+.macro-row,
+.plain-list li,
+.recommendation-head {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.bar {
+  height: 6px;
+  margin-top: 4px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.plain-list li {
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.plain-list li:first-child {
+  border-top: none;
+}
+
+.recommendation-list {
+  counter-reset: rank;
+}
+
+.recommendation-list li {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  counter-increment: rank;
+}
+
+.recommendation-list li:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.recommendation-name {
+  font-weight: 600;
+}
+
+.recommendation-name::before {
+  content: counter(rank) '. ';
+  color: var(--muted);
+}
+
+.score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tag {
+  padding: 1px 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.tag.warn {
+  color: var(--warn);
+  border-color: var(--warn);
 }
