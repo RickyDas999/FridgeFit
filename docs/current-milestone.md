@@ -25,7 +25,7 @@ Last updated: 2026-10-12
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: Minimal Demo Frontend.** Slice 1 is implemented. Begin each slice only when
+**Active milestone: Minimal Demo Frontend.** Slices 1–2 are implemented. Begin each slice only when
 the developer approves it. Frontend rules are in `docs/architecture.md` § Frontend.
 
 ## Active Milestone: Minimal Demo Frontend
@@ -301,10 +301,18 @@ Implementation behavior worth knowing:
 - React 19 + TypeScript + Vite 8 (template `react-ts`, ESLint/oxlint and demo assets removed).
   Runtime dependencies: `react`, `react-dom` only.
 - `src/api.ts` is the API boundary: `API_BASE_URL` from `VITE_API_BASE_URL`, defaulting to
-  `http://127.0.0.1:8000`, and `checkHealth()` calling `GET /health` with native `fetch`. It
-  distinguishes connected, unreachable (network or CORS failure), and error responses.
-- `src/App.tsx` is the shell: it checks the backend on load and shows Connected/Unavailable, the
-  API URL, and a "Check again" button. No product UI yet.
+  `http://127.0.0.1:8000`; TypeScript types mirroring the response schemas; `checkHealth()`
+  (connected, unreachable — network or CORS failure — or error response); and read fetchers
+  `getNutritionState`, `getInventory`, `getRecommendations`, `getTodaysMeals`. The fetchers
+  omit date parameters, so the server's "today" applies.
+- `src/App.tsx`: header with the backend status (and "Check again" when unavailable), then the
+  dashboard.
+- `src/Dashboard.tsx`: the read-only dashboard (Slice 2). Four panels, each loading on its own
+  with its own loading and error state: "What to make" (ranked recommendations with score,
+  availability %, missing ingredients, expired-batch count, times eaten this week), "Today's
+  nutrition" (remaining of goal per macro, "over" when negative, a message when no goal
+  applies), "Eaten today" (time, name, calories, rating), and "In the kitchen" (inventory with
+  units). It only formats API values; no domain calculation happens in the frontend.
 - `npm run dev` serves it on `http://localhost:5173`; `npm run build` type-checks (`tsc -b`) and
   builds.
 
