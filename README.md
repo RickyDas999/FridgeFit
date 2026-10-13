@@ -24,9 +24,9 @@ frontend. Implemented:
 - **HTTP API**: endpoints to stock the kitchen, add recipes and goals, get recommendations,
   confirm meals (with optional idempotency keys for safe retries), and rate them.
 
-Not built yet: rating meals in the frontend, authentication, nutrition-data and Claude
-integrations, and migrations. See [`docs/current-milestone.md`](docs/current-milestone.md) for
-exactly what is implemented and what comes next.
+Not built yet: authentication, nutrition-data and Claude integrations, and migrations. See
+[`docs/current-milestone.md`](docs/current-milestone.md) for exactly what is implemented and what
+comes next.
 
 ## Getting Started
 
@@ -62,9 +62,9 @@ npm run dev
 ```
 
 Open <http://localhost:5173> for the dashboard: ranked recommendations (click one to see why it
-ranked there, or log it as a meal with "I ate this"), today's nutrition, today's meals, and
-inventory. The header shows **Backend connected**, or **Backend unavailable** if the API is not
-running. The frontend calls `http://127.0.0.1:8000` by default; set `VITE_API_BASE_URL` (for
+ranked there, or log it as a meal with "I ate this"), today's nutrition, today's meals (rate each
+1–5), and inventory. The header shows **Backend connected**, or **Backend unavailable** if the API
+is not running. The frontend calls `http://127.0.0.1:8000` by default; set `VITE_API_BASE_URL` (for
 example in `frontend/.env.local`) to point it elsewhere.
 
 Run the same checks CI runs:
