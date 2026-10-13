@@ -3,7 +3,7 @@
 Snapshot of the repository's actual state. Update this file whenever a slice or milestone lands.
 If it disagrees with the code, the code is correct and this file is stale.
 
-Last updated: 2026-10-11
+Last updated: 2026-10-12
 
 ---
 
@@ -25,8 +25,67 @@ Last updated: 2026-10-11
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**No feature milestone is active.** The next one has not been chosen. Do not start new feature
-work until the developer approves the next milestone and its scope.
+**Active milestone: Minimal Demo Frontend.** No slice is implemented yet. Begin each slice only
+when the developer approves it. Frontend rules are in `docs/architecture.md` § Frontend.
+
+## Active Milestone: Minimal Demo Frontend
+
+Make FridgeFit usable and demonstrable, mainly for a technical project deep dive, through a small
+React UI that consumes the existing V1 HTTP API. The API contracts do not change for the
+frontend; the backend stays authoritative for all domain behavior.
+
+### Demo workflow
+
+1. Open a dashboard.
+2. See current inventory.
+3. See today's nutrition goal and remaining macros.
+4. See ranked meal recommendations.
+5. Open a recommendation and understand why it ranked where it did.
+6. Choose "Log meal" / "I ate this".
+7. Choose servings and confirm the meal.
+8. Observe inventory decrease, remaining nutrition change, recommendations refresh, and the meal
+   appear in today's history.
+9. Rate the logged meal from 1 to 5.
+
+Recipe-based meal confirmation is the V1 "add meal" interaction; manual macro-only meals are
+deferred.
+
+### Demo data
+
+The frontend assumes data already exists; it has no data-entry screens. The repository will
+provide a reproducible local demo dataset through a seed script (planned:
+`scripts/seed_demo.py`, Slice 1). It should cover enough ingredients, batches, recipes, a
+nutrition goal, meal history, and feedback to show availability differences, expiry urgency,
+macro fit, ranking, recent frequency, enjoyment, meal confirmation, and feedback.
+
+### Slices
+
+1. **Demo seed data + frontend foundation:** the seed script; a React + TypeScript + Vite project
+   in `frontend/`; minimal local-development CORS in FastAPI; a small `fetch`-based API client;
+   an application shell; a health check from the frontend to FastAPI. Out of scope: dashboard,
+   recommendations, meal logging, feedback, deployment.
+2. **Read-only dashboard:** today's remaining nutrition, current inventory, ranked
+   recommendations, and today's meals. No writes.
+3. **Recommendation detail:** inspect one recommendation using only what the API returns:
+   availability and ingredient shortages, expiry urgency and expired-batch warnings, macro fit,
+   enjoyment, recent frequency, and basic recipe information. No component is calculated in the
+   frontend.
+4. **Log meal:** choose servings and confirm, sending a newly generated UUID in the
+   `Idempotency-Key` header; handle insufficient inventory and allow an explicit shortfall
+   confirmation; on success refresh inventory, nutrition state, recommendations, and today's
+   meals. User-facing wording ("Log meal", "I ate this") over internal terms.
+5. **Rate meal:** give an unrated meal one 1–5 rating through the feedback endpoint, show stored
+   ratings, and refresh affected views.
+6. **Demo readiness:** loading, error, and meaningful empty states; basic responsive layout;
+   coherent visual hierarchy; README and local demo instructions; final milestone documentation.
+
+### Non-goals for this milestone
+
+Manual macro-only meal creation; ingredient, inventory/grocery, manual inventory correction,
+recipe, and nutrition-goal entry or editing UIs; authentication and users; external
+nutrition-data integration; runtime Claude recipe generation; deployment and Docker (a separate
+milestone after the local frontend); Redux or another global state framework; a UI component
+framework.
 
 ## Known Follow-ups
 
@@ -263,7 +322,8 @@ with:
 
 ## Intentionally Unimplemented
 
-- Frontend
+- Frontend (planned in the active milestone; its non-goals are listed there)
+- Manual macro-only meal creation through the API
 - Authentication and users
 - Nutrition-data API integration
 - Runtime Claude meal generation
