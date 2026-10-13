@@ -35,3 +35,27 @@ jobs:
 
       - name: Test
         run: pytest -v
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # Matches local development; Vite 8 needs Node 20.19+ or 22.12+.
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # tsc -b type-checks, then vite build bundles; either failing fails the job.
+      - name: Type-check and build
+        run: npm run build
