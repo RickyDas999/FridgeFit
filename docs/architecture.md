@@ -30,6 +30,7 @@ Concurrent writes are not currently a meaningful concern.
 - SQLite as the V1 relational database
 - FastAPI for the V1 HTTP API
 - Pydantic for HTTP request and response schemas
+- React + TypeScript + Vite for the demo frontend (a Node.js toolchain confined to `frontend/`)
 - pytest
 - Ruff for linting, pinned to an exact version and configured in `pyproject.toml`
 - GitHub Actions for CI: lint and tests on every pull request and every push to `main`
@@ -72,9 +73,10 @@ app/
 ├── domain/        deterministic business logic and its input validators
 ├── application/   thin workflow functions spanning persistence + domain
 └── api/           FastAPI app, routes, Pydantic schemas, error mapping
+frontend/          React + TypeScript + Vite UI; talks to the backend only over the HTTP API
 tests/             pytest suite; tests/conftest.py provides an in-memory SQLite session
 .github/workflows/ CI workflow and the advisory AI review workflow
-scripts/           CI-only tooling (the AI review helper); not application code
+scripts/           developer and CI tooling (e.g. the AI review helper); not application code
 AGENTS.md          contract for the independent AI reviewer
 ```
 
@@ -117,6 +119,25 @@ AGENTS.md          contract for the independent AI reviewer
 - Do not add repositories, generic service classes, Unit of Work frameworks, dependency-injection
   frameworks, or similar layers. FastAPI's built-in `Depends` is enough to provide the
   request-scoped session.
+
+## Frontend
+
+- `frontend/` is the UI boundary: a React + TypeScript app built with Vite. FridgeFit stays one
+  repository and one modular-monolith backend; the frontend is a client of it, not a second
+  backend.
+- The frontend talks to FastAPI only through the HTTP API. There is no backend-for-frontend layer
+  and no direct database access.
+- The backend stays authoritative for every domain behavior: ranking, availability, expiry
+  urgency, macro calculations, nutrition state, FEFO consumption, serving scaling, and MealLog
+  snapshots. The frontend never re-implements or approximates these calculations; it displays
+  what the API returns.
+- Frontend state is presentation and interaction only: loading and error state, the selected
+  item, form input such as servings, dialog state, and refetching API resources after a write.
+- Start with native `fetch` and plain React state, and simple CSS. Do not add Next.js, Redux,
+  Zustand, TanStack/React Query, or a UI component framework.
+- FastAPI may enable CORS only as narrowly as the local Vite-to-FastAPI development setup
+  requires (the Vite dev origin). Broader CORS belongs to a deployment decision.
+- Deployment is out of scope until a separate milestone decides it.
 
 ## Persistence Conventions
 
