@@ -25,7 +25,8 @@ Last updated: 2026-10-12
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: Minimal Demo Frontend.** Slices 1–5 are implemented. Begin each slice only when
+**Active milestone: Minimal Demo Frontend.** Slices 1–5 and Slice 6's design pass are
+implemented. Begin each slice only when
 the developer approves it. Frontend rules are in `docs/architecture.md` § Frontend.
 
 ## Active Milestone: Minimal Demo Frontend
@@ -76,8 +77,13 @@ macro fit, ranking, recent frequency, enjoyment, meal confirmation, and feedback
    meals. User-facing wording ("Log meal", "I ate this") over internal terms.
 5. **Rate meal:** give an unrated meal one 1–5 rating through the feedback endpoint, show stored
    ratings, and refresh affected views.
-6. **Demo readiness:** loading, error, and meaningful empty states; basic responsive layout;
-   coherent visual hierarchy; README and local demo instructions; final milestone documentation.
+6. **Demo readiness**, as two PRs:
+   - **Design pass:** a deliberate visual design (`architecture.md` § Frontend, Visual design):
+     token system in light and dark, self-hosted typeface, a featured top recommendation,
+     meters with low/over states, structured layouts in place of joined strings, responsive
+     layout, visible focus, and reduced motion respected.
+   - **Demo readiness and closure:** consistent loading, error, and meaningful empty states;
+     README demo script; final milestone documentation.
 
 ### Non-goals for this milestone
 
@@ -299,7 +305,8 @@ Implementation behavior worth knowing:
 ### Frontend (`frontend/`)
 
 - React 19 + TypeScript + Vite 8 (template `react-ts`, ESLint/oxlint and demo assets removed).
-  Runtime dependencies: `react`, `react-dom` only.
+  Runtime dependencies: `react`, `react-dom`, and `@fontsource-variable/atkinson-hyperlegible-next`
+  (the self-hosted typeface, imported in `src/main.tsx`).
 - `src/api.ts` is the API boundary: `API_BASE_URL` from `VITE_API_BASE_URL`, defaulting to
   `http://127.0.0.1:8000`; TypeScript types mirroring the response schemas; `checkHealth()`
   (connected, unreachable — network or CORS failure — or error response); and read fetchers
@@ -340,6 +347,12 @@ Implementation behavior worth knowing:
   repeat is rejected (409). Buttons are disabled while sending. On success or "already rated"
   the dashboard shows a notice and refetches, so the stored rating and the recipe's enjoyment
   score update.
+- Design pass (Slice 6): `src/index.css` is one token system (light and dark) following
+  `architecture.md` § Visual design. Layout: the ranked list on a white "shelf" with the top
+  pick set large; a sidebar with Today (calories left as the one large figure, meters for
+  calories and macros that turn amber below 15% left and red when over — display thresholds
+  only), Eaten today, and In the fridge, divided by rules. The detail shows need/have in a
+  table.
 - `npm run dev` serves it on `http://localhost:5173`; `npm run build` type-checks (`tsc -b`) and
   builds.
 

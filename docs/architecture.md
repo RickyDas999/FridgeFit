@@ -139,6 +139,21 @@ AGENTS.md          contract for the independent AI reviewer
   requires (the Vite dev origin). Broader CORS belongs to a deployment decision.
 - Deployment is out of scope until a separate milestone decides it.
 
+### Visual design
+
+- Theme: the inside of a fridge. Cool frost page, white shelf surface, deep pine ink, and one
+  basil accent for actions, meter fills, and scores. Dark mode has its own validated values.
+- Warm color means attention and nothing else: use-by amber for expiry, shortfalls, and
+  missing ingredients; tomato for over budget and errors. Every text/background pairing meets
+  WCAG AA (4.5:1).
+- Type: one family, Atkinson Hyperlegible Next, self-hosted with `@fontsource` so the app needs
+  no network for fonts. Sentence case; no all-caps labels; tabular figures only in columns.
+- Hierarchy: the top recommendation is the one large element; everything else stays quiet.
+  Structure carries meaning (rules between sections, tables for need/have), not decoration:
+  no identical card grid, no middle-dot meta strings.
+- Tokens (colors, spacing, radius) are CSS variables in `frontend/src/index.css`; components
+  use them rather than literal values.
+
 ## Persistence Conventions
 
 - SQLite foreign-key enforcement is enabled on every connection (`PRAGMA foreign_keys=ON` via a

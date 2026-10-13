@@ -110,17 +110,14 @@ function LogMeal({ recipeId, recipeName, unitOf, onLogged }: Props) {
 
       {shortfalls && (
         <div className="shortfall">
-          <p className="warn-text">Not enough in the kitchen for {servings} serving(s):</p>
-          <ul className="plain-list">
+          <p>Not enough in the fridge for {servings} serving{Number(servings) === 1 ? '' : 's'}.</p>
+          <ul>
             {shortfalls.map((item) => {
               const unit = unitOf(item.ingredient_id)
               return (
                 <li key={item.ingredient_id}>
-                  <span>{item.name}</span>
-                  <span className="detail">
-                    need {formatQuantity(item.quantity_needed, unit)} · have{' '}
-                    {formatQuantity(item.quantity_available, unit)}
-                  </span>
+                  {item.name}: need {formatQuantity(item.quantity_needed, unit)}, have{' '}
+                  {formatQuantity(item.quantity_available, unit)}
                 </li>
               )
             })}
