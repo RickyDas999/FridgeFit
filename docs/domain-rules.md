@@ -76,7 +76,7 @@ For architecture, see `docs/architecture.md`. For what is currently built, see
   made: each ingredient is scaled by `servings / recipe servings`, and both inventory consumption
   and the logged macros reflect the scaled amount. Leftovers are never created or tracked.
 - Meal confirmation is idempotent: retrying a confirmation that already succeeded, with the same
-  idempotency key, must not create another MealLog or consume inventory again.
+  client-provided idempotency key, must not create another MealLog or consume inventory again.
 
 ## Nutrition Goals
 

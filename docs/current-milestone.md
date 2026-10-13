@@ -189,10 +189,12 @@ Implementation behavior worth knowing:
     `is_missing`), expiry urgency (with expired batches as warnings), macro fit (null without a
     goal), enjoyment, and recent frequency.
   - `POST /recipes/{recipe_id}/confirm`: body `servings` (> 0, fractions allowed),
-    `consumed_at` (naive local time, defaults to now), optional `name`, `allow_shortfall`
-    (default false), and optional `idempotency_key` (UUID). 201 with the new MealLog; 200 with
-    the original MealLog when the key was already confirmed. Missing recipe → 404 (checked
-    before the key). Shortfall without the override → 409 with
+    `consumed_at` (naive local time, defaults to now), optional `name`, and `allow_shortfall`
+    (default false). The idempotency key is the optional `Idempotency-Key` request header (a
+    UUID; malformed → 422); an `idempotency_key` body field is ignored like any unknown field.
+    201 with the new MealLog; 200 with the original MealLog when the key was already
+    confirmed. The response's `idempotency_key` shows the stored key. Missing recipe → 404
+    (checked before the key). Shortfall without the override → 409 with
     `{"detail": {"message", "shortfalls": [{ingredient_id, name, quantity_needed,
     quantity_available}]}}`; nothing is written.
   - `GET /meal-logs?consumed_on=YYYY-MM-DD`: that day's meals in `consumed_at` order, each with
@@ -221,7 +223,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-231 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+234 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
