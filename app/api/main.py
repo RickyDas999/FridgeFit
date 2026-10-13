@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -10,6 +11,9 @@ from app.api import ingredients, inventory, meals, nutrition, recipes, recommend
 from app.api.session import SessionDep
 from app.errors import InvalidInputError
 from app.persistence.database import DATABASE_URL, Base, get_engine, get_session_factory
+
+# The Vite dev server's origins. Local development only; deployment will decide its own origins.
+LOCAL_FRONTEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 @asynccontextmanager
@@ -89,6 +93,14 @@ def create_app(database_url: str = DATABASE_URL) -> FastAPI:
     app = FastAPI(title="FridgeFit", lifespan=lifespan)
     app.state.engine = get_engine(database_url)
     app.state.session_factory = get_session_factory(app.state.engine)
+    # Lets the local frontend call the API from another origin. No credentials: V1 has no auth.
+    # Idempotency-Key is a custom header, so browsers preflight requests that send it.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=LOCAL_FRONTEND_ORIGINS,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "Idempotency-Key"],
+    )
     app.add_exception_handler(InvalidInputError, handle_invalid_input)
     app.add_exception_handler(RequestValidationError, handle_request_validation)
     app.get("/health")(health)

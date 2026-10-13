@@ -52,6 +52,8 @@ GENERATED_PATTERNS = (
     ".github/workflows/*.lock.yml",
     ".github/aw/*",
     "*.egg-info/*",
+    # npm writes this; thousands of lines that say nothing about the authored change.
+    "frontend/package-lock.json",
 )
 
 # Authoritative doc sections worth including when files under these paths change.

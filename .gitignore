@@ -3,3 +3,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 *.db
+# Frontend (Node tooling lives only in frontend/)
+frontend/node_modules/
+frontend/dist/
+frontend/*.local
