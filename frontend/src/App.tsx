@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { API_BASE_URL, checkHealth, type HealthResult } from './api'
+import Dashboard from './Dashboard'
 
 function App() {
   // null while a check is in flight.
@@ -16,28 +17,35 @@ function App() {
 
   return (
     <main className="shell">
-      <header>
-        <h1>FridgeFit</h1>
-        <p className="tagline">What should I make with what I have?</p>
+      <header className="app-header">
+        <div>
+          <h1>FridgeFit</h1>
+          <p className="tagline">What should I make with what I have?</p>
+        </div>
+        <div className="health" aria-live="polite">
+          {health === null && <span className="status checking">Checking backend…</span>}
+          {health?.ok && <span className="status connected">Backend connected</span>}
+          {health && !health.ok && (
+            <>
+              <span className="status unavailable" title={health.message}>
+                Backend unavailable
+              </span>
+              <button type="button" onClick={refreshHealth}>
+                Check again
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
-      <section className="card" aria-live="polite">
-        <h2>Backend</h2>
-        {health === null && <p className="status checking">Checking connection…</p>}
-        {health?.ok && <p className="status connected">Connected</p>}
-        {health && !health.ok && (
-          <>
-            <p className="status unavailable">Unavailable</p>
-            <p className="detail">{health.message}</p>
-          </>
-        )}
-        <p className="detail">
-          API: <code>{API_BASE_URL}</code>
+      {health && !health.ok && (
+        <p className="error-text">
+          {health.message} Start it with <code>.venv/bin/uvicorn app.api.main:app</code> (API:{' '}
+          <code>{API_BASE_URL}</code>).
         </p>
-        <button type="button" onClick={refreshHealth} disabled={health === null}>
-          Check again
-        </button>
-      </section>
+      )}
+
+      <Dashboard />
     </main>
   )
 }
