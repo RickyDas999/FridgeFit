@@ -3,7 +3,7 @@
 Snapshot of the repository's actual state. Update this file whenever a slice or milestone lands.
 If it disagrees with the code, the code is correct and this file is stale.
 
-Last updated: 2026-10-12
+Last updated: 2026-10-13
 
 ---
 
@@ -21,77 +21,16 @@ Last updated: 2026-10-12
    recommendations, idempotent meal confirmation, meal history, and feedback), with thin
    application workflows where persistence and domain logic meet. Grew the suite from 163 to
    231 tests.
+4. **Minimal Demo Frontend**: a React + TypeScript + Vite dashboard over the V1 API with a
+   reproducible demo seed: ranked recommendations with their reasons, meal logging with
+   idempotency keys and shortfall override, meal rating, a deliberate visual design, and a
+   README demo walkthrough. Added local CORS and a frontend CI job; no API contract changed.
 
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: Minimal Demo Frontend.** Slices 1–5 and Slice 6's design pass are
-implemented. Begin each slice only when
-the developer approves it. Frontend rules are in `docs/architecture.md` § Frontend.
-
-## Active Milestone: Minimal Demo Frontend
-
-Make FridgeFit usable and demonstrable, mainly for a technical project deep dive, through a small
-React UI that consumes the existing V1 HTTP API. The API contracts do not change for the
-frontend; the backend stays authoritative for all domain behavior.
-
-### Demo workflow
-
-1. Open a dashboard.
-2. See current inventory.
-3. See today's nutrition goal and remaining macros.
-4. See ranked meal recommendations.
-5. Open a recommendation and understand why it ranked where it did.
-6. Choose "Log meal" / "I ate this".
-7. Choose servings and confirm the meal.
-8. Observe inventory decrease, remaining nutrition change, recommendations refresh, and the meal
-   appear in today's history.
-9. Rate the logged meal from 1 to 5.
-
-Recipe-based meal confirmation is the V1 "add meal" interaction; manual macro-only meals are
-deferred.
-
-### Demo data
-
-The frontend assumes data already exists; it has no data-entry screens. The repository will
-provide a reproducible local demo dataset through a seed script (planned:
-`scripts/seed_demo.py`, Slice 1). It should cover enough ingredients, batches, recipes, a
-nutrition goal, meal history, and feedback to show availability differences, expiry urgency,
-macro fit, ranking, recent frequency, enjoyment, meal confirmation, and feedback.
-
-### Slices
-
-1. **Demo seed data + frontend foundation:** the seed script; a React + TypeScript + Vite project
-   in `frontend/`; minimal local-development CORS in FastAPI; a small `fetch`-based API client;
-   an application shell; a health check from the frontend to FastAPI. Out of scope: dashboard,
-   recommendations, meal logging, feedback, deployment.
-2. **Read-only dashboard:** today's remaining nutrition, current inventory, ranked
-   recommendations, and today's meals. No writes.
-3. **Recommendation detail:** inspect one recommendation using only what the API returns:
-   availability and ingredient shortages, expiry urgency and expired-batch warnings, macro fit,
-   enjoyment, recent frequency, and basic recipe information. No component is calculated in the
-   frontend.
-4. **Log meal:** choose servings and confirm, sending a newly generated UUID in the
-   `Idempotency-Key` header; handle insufficient inventory and allow an explicit shortfall
-   confirmation; on success refresh inventory, nutrition state, recommendations, and today's
-   meals. User-facing wording ("Log meal", "I ate this") over internal terms.
-5. **Rate meal:** give an unrated meal one 1–5 rating through the feedback endpoint, show stored
-   ratings, and refresh affected views.
-6. **Demo readiness**, as two PRs:
-   - **Design pass:** a deliberate visual design (`architecture.md` § Frontend, Visual design):
-     token system in light and dark, self-hosted typeface, a featured top recommendation,
-     meters with low/over states, structured layouts in place of joined strings, responsive
-     layout, visible focus, and reduced motion respected.
-   - **Demo readiness and closure:** consistent loading, error, and meaningful empty states;
-     README demo script; final milestone documentation.
-
-### Non-goals for this milestone
-
-Manual macro-only meal creation; ingredient, inventory/grocery, manual inventory correction,
-recipe, and nutrition-goal entry or editing UIs; authentication and users; external
-nutrition-data integration; runtime Claude recipe generation; deployment and Docker (a separate
-milestone after the local frontend); Redux or another global state framework; a UI component
-framework.
+**No feature milestone is active.** The next one has not been chosen. Do not start new feature
+work until the developer approves the next milestone and its scope.
 
 ## Known Follow-ups
 
@@ -105,6 +44,12 @@ Deliberate shortcuts and cleanup, recorded so they are not lost:
   constraint rejects the second (a 500), so nothing is logged twice.
 - New database constraints (e.g. unique recipe names) reach an existing `fridgefit.db` only if it
   is recreated, because startup's `create_all` never alters tables and Alembic is deferred.
+- The frontend has no automated tests; CI only type-checks and builds it. Behavior is verified
+  by hand (README demo walkthrough).
+- Every write (logging or rating a meal) refetches all four dashboard sections; fine for one
+  user, narrower refreshes if it ever matters.
+- "Today" is the server's date (endpoints default `as_of` to it); a server in another timezone
+  would shift the day boundary.
 
 ## Implemented
 
@@ -353,6 +298,11 @@ Implementation behavior worth knowing:
   calories and macros that turn amber below 15% left and red when over — display thresholds
   only), Eaten today, and In the fridge, divided by rules. The detail shows need/have in a
   table.
+- Offline handling: `api.ts` throws `BackendUnreachable` when no response arrives, and
+  `useResource` marks that error `offline`. Sections and the recipe detail then show "Waiting for
+  the API…" while the header banner explains once how to start it; real API errors still show in
+  red. "Try again" re-checks `/health` and, when the API is back, remounts the dashboard
+  (`key`) so every section refetches.
 - `npm run dev` serves it on `http://localhost:5173`; `npm run build` type-checks (`tsc -b`) and
   builds.
 
@@ -401,8 +351,9 @@ with:
 
 ## Intentionally Unimplemented
 
-- Frontend (planned in the active milestone; its non-goals are listed there)
-- Manual macro-only meal creation through the API
+- Frontend data-entry screens: ingredients, groceries, recipes, nutrition goals, and manual
+  inventory correction (data comes from the seed script or the API)
+- Manual macro-only meal creation, in the API or the frontend
 - Authentication and users
 - Nutrition-data API integration
 - Runtime Claude meal generation
@@ -411,5 +362,5 @@ with:
 - Manual inventory correction
 - Recipe editing and deletion
 - Alembic migrations
-- Docker and deployment
+- Deployment and Docker (planned as a separate milestone after the frontend)
 - Redis, queues, and microservices

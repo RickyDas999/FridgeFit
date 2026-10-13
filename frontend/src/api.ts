@@ -89,6 +89,13 @@ export type ConfirmResult =
 
 export type HealthResult = { ok: true } | { ok: false; message: string }
 
+/** Thrown when no response arrives at all (server down, wrong URL, or CORS refusal). */
+export class BackendUnreachable extends Error {
+  constructor() {
+    super(`Cannot reach the backend at ${API_BASE_URL}.`)
+  }
+}
+
 /** Ask the backend's GET /health whether the API and its database are up. */
 export async function checkHealth(): Promise<HealthResult> {
   let response: Response
@@ -114,7 +121,7 @@ async function getJson<T>(path: string): Promise<T> {
   try {
     response = await fetch(`${API_BASE_URL}${path}`)
   } catch {
-    throw new Error(`Cannot reach the backend at ${API_BASE_URL}.`)
+    throw new BackendUnreachable()
   }
   if (!response.ok) {
     throw new Error(`GET ${path} failed with HTTP ${response.status}.`)
@@ -163,7 +170,7 @@ export async function confirmMeal(
       body: JSON.stringify({ servings, allow_shortfall: options.allowShortfall }),
     })
   } catch {
-    throw new Error(`Cannot reach the backend at ${API_BASE_URL}.`)
+    throw new BackendUnreachable()
   }
 
   if (response.status === 409) {
@@ -192,7 +199,7 @@ export async function rateMeal(
       body: JSON.stringify({ rating }),
     })
   } catch {
-    throw new Error(`Cannot reach the backend at ${API_BASE_URL}.`)
+    throw new BackendUnreachable()
   }
   if (response.status === 409) return 'already_rated'
   if (!response.ok) {

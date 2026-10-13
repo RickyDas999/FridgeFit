@@ -12,8 +12,8 @@ codebase that can be explained end to end.
 
 ## Status
 
-FridgeFit is a **single-user HTTP API** (FastAPI, SQLite) with the foundation of a React
-frontend. Implemented:
+FridgeFit is a **single-user HTTP API** (FastAPI, SQLite) with a React demo frontend.
+Implemented:
 
 - **Persistence**: SQLAlchemy models for ingredients, inventory batches, recipes, meal history,
   nutrition goals, and meal feedback, on SQLite.
@@ -23,6 +23,8 @@ frontend. Implemented:
   recent eating frequency reported for information.
 - **HTTP API**: endpoints to stock the kitchen, add recipes and goals, get recommendations,
   confirm meals (with optional idempotency keys for safe retries), and rate them.
+- **Demo frontend**: a dashboard that shows ranked recommendations and why they rank, logs meals,
+  handles inventory shortfalls, and rates meals, all through the API.
 
 Not built yet: authentication, nutrition-data and Claude integrations, and migrations. See
 [`docs/current-milestone.md`](docs/current-milestone.md) for exactly what is implemented and what
@@ -61,11 +63,10 @@ npm ci
 npm run dev
 ```
 
-Open <http://localhost:5173> for the dashboard: ranked recommendations (click one to see why it
-ranked there, or log it as a meal with "I ate this"), today's nutrition, today's meals (rate each
-1–5), and inventory. The header shows **Backend connected**, or **Backend unavailable** if the API
-is not running. The frontend calls `http://127.0.0.1:8000` by default; set `VITE_API_BASE_URL` (for
-example in `frontend/.env.local`) to point it elsewhere.
+Open <http://localhost:5173> for the dashboard. The header shows **Connected**, or **Offline** if
+the API is not running. The frontend calls `http://127.0.0.1:8000` by default; set
+`VITE_API_BASE_URL` (for example in `frontend/.env.local`) to point it elsewhere. See [Demo
+walkthrough](#demo-walkthrough) for a guided tour.
 
 Run the same checks CI runs:
 
@@ -76,6 +77,34 @@ Run the same checks CI runs:
 
 Each domain module has a matching `tests/test_<module>.py`, and each API route module a
 `tests/test_api_<resource>.py`.
+
+## Demo walkthrough
+
+A five-minute tour of the full flow. Start from a fresh seed so the numbers match
+(`.venv/bin/python scripts/seed_demo.py`), with the API and frontend running as above.
+
+1. **The answer first.** "What to make" ranks every recipe that can be made now; the top pick is
+   set large. Every score comes from the backend; the frontend only displays it.
+2. **The context.** The sidebar shows calories and macros left today against the goal, what was
+   eaten today, and what is in the fridge.
+3. **Why it ranks there.** Open the top pick. "Why it ranks here" shows the four parts of the
+   score (availability, expiry urgency, macro fit, enjoyment), and "For one serving" shows what
+   is needed against what is on hand.
+4. **Imperfect matches.** Open "Salmon rice plate": there is no salmon, but a recipe may still be
+   suggested when only one main ingredient is missing. It also flags spinach past its use-by
+   date, which still counts as on hand: FridgeFit leaves that call to you. "Bean burrito" shows a
+   partial amount (80% of the beans needed).
+5. **Log a meal.** On the top pick, choose "I ate this", keep 1 serving, and log it. Watch the
+   whole page update from the API: fridge quantities drop (the chicken due soonest is used first),
+   calories left drop, the ranking refreshes, and the meal appears under "Eaten today".
+6. **A shortfall.** Choose "I ate this" again with 20 servings. FridgeFit lists what is short
+   instead of logging it, and "Log anyway with what I have" logs only what is in the fridge.
+7. **Rate it.** Rate a meal under "Eaten today"; the recipe's enjoyment score updates.
+
+Worth mentioning under the hood: the backend owns every rule (ranking, availability, FEFO
+consumption, serving scaling); each "Log meal" sends an `Idempotency-Key`, so a retried request
+can never log a meal twice; and each request runs in its own database transaction, so a failed
+write changes nothing. To reset, run the seed script again.
 
 ## API
 

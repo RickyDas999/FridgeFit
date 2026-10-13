@@ -5,10 +5,18 @@ import Dashboard from './Dashboard'
 function App() {
   // null while a check is in flight.
   const [health, setHealth] = useState<HealthResult | null>(null)
+  // Bumped when "Try again" finds the API back; a new key remounts the dashboard so it refetches.
+  const [reconnects, setReconnects] = useState(0)
 
   async function refreshHealth() {
     setHealth(null)
-    setHealth(await checkHealth())
+    const result = await checkHealth()
+    setHealth(result)
+    return result.ok
+  }
+
+  async function tryAgain() {
+    if (await refreshHealth()) setReconnects((count) => count + 1)
   }
 
   useEffect(() => {
@@ -27,7 +35,7 @@ function App() {
           <span className="health-dot" aria-hidden="true" />
           {statusText[status]}
           {status === 'unavailable' && (
-            <button type="button" className="link-button" onClick={refreshHealth}>
+            <button type="button" className="link-button" onClick={tryAgain}>
               Try again
             </button>
           )}
@@ -42,7 +50,7 @@ function App() {
         </p>
       )}
 
-      <Dashboard />
+      <Dashboard key={reconnects} />
     </main>
   )
 }

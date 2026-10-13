@@ -130,7 +130,12 @@ function RecommendationDetail(props: {
 
       <h3>Recipe</h3>
       {recipe.status === 'loading' && <p className="muted">Loading recipe…</p>}
-      {recipe.status === 'error' && <p className="error-text">{recipe.message}</p>}
+      {recipe.status === 'error' &&
+        (recipe.offline ? (
+          <p className="muted">Waiting for the API…</p>
+        ) : (
+          <p className="error-text">{recipe.message}</p>
+        ))}
       {recipe.status === 'ready' && (
         <>
           <dl className="recipe-facts">
