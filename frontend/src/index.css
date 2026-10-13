@@ -236,3 +236,81 @@ code {
   color: var(--warn);
   border-color: var(--warn);
 }
+
+.warn-text {
+  color: var(--warn);
+}
+
+/* The whole summary is the click target; reset the default button styling. */
+.recommendation-summary {
+  display: block;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border-radius: 4px;
+}
+
+.recommendation-summary:hover .recommendation-name {
+  text-decoration: underline;
+}
+
+.recommendation-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.recommendation-detail {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 6px;
+}
+
+.recommendation-detail h3 {
+  margin: 16px 0 6px;
+  font-size: 0.9rem;
+}
+
+.recommendation-detail h3:first-child {
+  margin-top: 0;
+}
+
+.component-scores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.component-scores div {
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.component-scores dt {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.component-scores dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ingredient-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: flex-end;
+}
+
+.instructions {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}

@@ -1,40 +1,18 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   getInventory,
   getNutritionState,
   getRecommendations,
   getTodaysMeals,
-  type CanonicalUnit,
   type InventoryItem,
   type Macros,
   type MealLog,
   type NutritionState,
   type Recommendation,
 } from './api'
-
-type Loadable<T> =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; data: T }
-
-/** Load one API resource once, tracking loading and error state. `load` must be stable. */
-function useResource<T>(load: () => Promise<T>): Loadable<T> {
-  const [state, setState] = useState<Loadable<T>>({ status: 'loading' })
-
-  useEffect(() => {
-    // Ignore a response that arrives after the component unmounted.
-    let active = true
-    load().then(
-      (data) => active && setState({ status: 'ready', data }),
-      (error: Error) => active && setState({ status: 'error', message: error.message }),
-    )
-    return () => {
-      active = false
-    }
-  }, [load])
-
-  return state
-}
+import { formatQuantity, formatScore, formatTime } from './format'
+import RecommendationDetail from './RecommendationDetail'
+import { useResource, type Loadable } from './useResource'
 
 /** A titled panel that shows loading and error states, or its content once data is ready. */
 function Panel<T>(props: {
@@ -52,19 +30,6 @@ function Panel<T>(props: {
       {state.status === 'ready' && children(state.data)}
     </section>
   )
-}
-
-const UNIT_LABELS: Record<CanonicalUnit, string> = { gram: 'g', milliliter: 'ml', count: '' }
-
-/** Format a quantity with its unit, e.g. "450 g" or "6". */
-function formatQuantity(quantity: number, unit: CanonicalUnit): string {
-  const rounded = Math.round(quantity * 10) / 10
-  return `${rounded}${UNIT_LABELS[unit] ? ` ${UNIT_LABELS[unit]}` : ''}`
-}
-
-/** Format a local, timezone-less ISO datetime from the API as a time of day, e.g. "08:00". */
-function formatTime(isoDateTime: string): string {
-  return new Date(isoDateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 const MACRO_ROWS: { key: keyof Macros; label: string; unit: string }[] = [
@@ -106,6 +71,9 @@ function NutritionSummary({ state }: { state: NutritionState }) {
 }
 
 function RecommendationList({ items }: { items: Recommendation[] }) {
+  // The recipe whose detail is open; one at a time.
+  const [openRecipeId, setOpenRecipeId] = useState<number | null>(null)
+
   if (items.length === 0) {
     return <p className="detail">No recipes can be made with what is on hand.</p>
   }
@@ -115,28 +83,35 @@ function RecommendationList({ items }: { items: Recommendation[] }) {
         const missing = item.availability.ingredients.filter((i) => i.is_missing)
         const expired = item.expiry_urgency.expired_batches.length
         const recent = item.recent_frequency.times_eaten_recently
+        const isOpen = openRecipeId === item.recipe_id
         return (
           <li key={item.recipe_id}>
-            <div className="recommendation-head">
-              <span className="recommendation-name">{item.name}</span>
-              <span className="score" title="Combined score from the API">
-                {Math.round(item.score * 100)}
-              </span>
-            </div>
-            <div className="tags">
-              <span className="tag">
-                {Math.round(item.availability.score * 100)}% available
-              </span>
-              {missing.length > 0 && (
-                <span className="tag warn">Missing {missing.map((i) => i.name).join(', ')}</span>
-              )}
-              {expired > 0 && (
-                <span className="tag warn">
-                  {expired} expired batch{expired > 1 ? 'es' : ''}
+            <button
+              type="button"
+              className="recommendation-summary"
+              aria-expanded={isOpen}
+              onClick={() => setOpenRecipeId(isOpen ? null : item.recipe_id)}
+            >
+              <div className="recommendation-head">
+                <span className="recommendation-name">{item.name}</span>
+                <span className="score" title="Combined score from the API">
+                  {formatScore(item.score)}
                 </span>
-              )}
-              {recent > 0 && <span className="tag">Eaten {recent}× this week</span>}
-            </div>
+              </div>
+              <div className="tags">
+                <span className="tag">{formatScore(item.availability.score)}% available</span>
+                {missing.length > 0 && (
+                  <span className="tag warn">Missing {missing.map((i) => i.name).join(', ')}</span>
+                )}
+                {expired > 0 && (
+                  <span className="tag warn">
+                    {expired} expired batch{expired > 1 ? 'es' : ''}
+                  </span>
+                )}
+                {recent > 0 && <span className="tag">Eaten {recent}× this week</span>}
+              </div>
+            </button>
+            {isOpen && <RecommendationDetail recommendation={item} />}
           </li>
         )
       })}

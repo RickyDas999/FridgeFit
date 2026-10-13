@@ -48,6 +48,24 @@ export type Recommendation = {
   recent_frequency: { times_eaten_recently: number; last_eaten_on: string | null }
 }
 
+export type Recipe = {
+  id: number
+  name: string
+  instructions: string[]
+  source_url: string | null
+  prep_minutes: number
+  servings: number
+  ingredients: {
+    ingredient_id: number
+    name: string
+    canonical_unit: CanonicalUnit
+    quantity: number
+    role: IngredientRole
+  }[]
+  macros: Macros
+  macros_per_serving: Macros
+}
+
 export type MealLog = Macros & {
   id: number
   recipe_id: number | null
@@ -98,3 +116,4 @@ export const getNutritionState = () => getJson<NutritionState>('/nutrition-state
 export const getInventory = () => getJson<InventoryItem[]>('/inventory')
 export const getRecommendations = () => getJson<Recommendation[]>('/recommendations')
 export const getTodaysMeals = () => getJson<MealLog[]>('/meal-logs')
+export const getRecipe = (recipeId: number) => getJson<Recipe>(`/recipes/${recipeId}`)
