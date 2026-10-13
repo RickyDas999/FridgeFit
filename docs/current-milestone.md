@@ -25,7 +25,7 @@ Last updated: 2026-10-12
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: Minimal Demo Frontend.** Slices 1–2 are implemented. Begin each slice only when
+**Active milestone: Minimal Demo Frontend.** Slices 1–3 are implemented. Begin each slice only when
 the developer approves it. Frontend rules are in `docs/architecture.md` § Frontend.
 
 ## Active Milestone: Minimal Demo Frontend
@@ -303,8 +303,11 @@ Implementation behavior worth knowing:
 - `src/api.ts` is the API boundary: `API_BASE_URL` from `VITE_API_BASE_URL`, defaulting to
   `http://127.0.0.1:8000`; TypeScript types mirroring the response schemas; `checkHealth()`
   (connected, unreachable — network or CORS failure — or error response); and read fetchers
-  `getNutritionState`, `getInventory`, `getRecommendations`, `getTodaysMeals`. The fetchers
-  omit date parameters, so the server's "today" applies.
+  `getNutritionState`, `getInventory`, `getRecommendations`, `getTodaysMeals`, `getRecipe`. The
+  dashboard fetchers omit date parameters, so the server's "today" applies.
+- `src/useResource.ts`: the `useResource` hook (loading/error/ready for one request, ignoring
+  late responses). `src/format.ts`: display formatting (units, 0–100 scores, times, and
+  calendar dates built from their parts to avoid a UTC off-by-one-day).
 - `src/App.tsx`: header with the backend status (and "Check again" when unavailable), then the
   dashboard.
 - `src/Dashboard.tsx`: the read-only dashboard (Slice 2). Four panels, each loading on its own
@@ -313,6 +316,13 @@ Implementation behavior worth knowing:
   nutrition" (remaining of goal per macro, "over" when negative, a message when no goal
   applies), "Eaten today" (time, name, calories, rating), and "In the kitchen" (inventory with
   units). It only formats API values; no domain calculation happens in the frontend.
+- `src/RecommendationDetail.tsx` (Slice 3): clicking a recommendation expands its detail
+  (one open at a time). It shows the four component scores (macro fit "No goal" when null) but
+  not the backend's weights; each ingredient's have/need per serving with "Missing" or "Short"
+  tags (from `is_missing` and `fraction_available`); expired batches by name and use-by date;
+  enjoyment and recent frequency; and recipe basics — prep time, servings, per-serving macros,
+  instructions — from `GET /recipes/{id}`, loaded when the detail opens (which also supplies
+  ingredient units).
 - `npm run dev` serves it on `http://localhost:5173`; `npm run build` type-checks (`tsc -b`) and
   builds.
 
