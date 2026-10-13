@@ -1,7 +1,8 @@
 import uuid
 from datetime import date, datetime, time, timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, NaiveDatetime
 from sqlalchemy import select
 
@@ -32,9 +33,6 @@ class MealConfirm(BaseModel):
     )
     allow_shortfall: bool = Field(
         default=False, description="Confirm anyway when inventory is short."
-    )
-    idempotency_key: uuid.UUID | None = Field(
-        default=None, description="Retrying with the same key returns the original meal."
     )
 
 
@@ -113,18 +111,29 @@ def meal_log_response(meal_log: MealLog) -> MealLogResponse:
 
 @router.post("/recipes/{recipe_id}/confirm", status_code=201)
 def confirm_recipe(
-    recipe_id: int, body: MealConfirm, session: SessionDep, response: Response
+    recipe_id: int,
+    body: MealConfirm,
+    session: SessionDep,
+    response: Response,
+    idempotency_key: Annotated[
+        uuid.UUID | None,
+        Header(
+            alias="Idempotency-Key",
+            description="Client-generated UUID; retrying with it returns the original meal.",
+        ),
+    ] = None,
 ) -> MealLogResponse:
     """Log a meal made from a recipe and consume its ingredients from inventory.
 
-    Returns 201 for a new meal, or 200 with the original meal when the idempotency key was
-    already confirmed.
+    Returns 201 for a new meal, or 200 with the original meal when the ``Idempotency-Key``
+    header was already confirmed.
 
     Args:
         recipe_id: The recipe that was made.
         body: Servings, time, and confirmation options.
         session: The request's database session.
         response: Used to switch the status code to 200 for a replayed key.
+        idempotency_key: The optional ``Idempotency-Key`` header, parsed as a UUID.
 
     Returns:
         The logged meal.
@@ -145,7 +154,7 @@ def confirm_recipe(
             consumed_at=body.consumed_at or datetime.now(),
             name=body.name,
             allow_shortfall=body.allow_shortfall,
-            idempotency_key=body.idempotency_key,
+            idempotency_key=idempotency_key,
         )
     except InsufficientInventoryError as exc:
         names = {line.ingredient_id: line.ingredient.name for line in recipe.recipe_ingredients}

@@ -66,7 +66,7 @@ Each domain module has a matching `tests/test_<module>.py`, and each API route m
 | `POST /recipes`, `GET /recipes`, `GET /recipes/{recipe_id}` | Recipes with derived macros |
 | `POST /nutrition-goals`, `GET /nutrition-state?as_of=` | Daily targets and what's left today |
 | `GET /recommendations?as_of=` | What to make, ranked, with the reasons |
-| `POST /recipes/{recipe_id}/confirm` | Log a meal and consume its ingredients |
+| `POST /recipes/{recipe_id}/confirm` | Log a meal and consume its ingredients; send an `Idempotency-Key` header to make retries safe |
 | `GET /meal-logs?consumed_on=` | Meals eaten on a day |
 | `POST /meal-logs/{meal_log_id}/feedback` | Rate a meal 1–5 |
 

@@ -35,12 +35,13 @@ def stir_fry(client):
     }).json()["id"]
 
 
-def confirm(client, recipe_id, **body):
+def confirm(client, recipe_id, key=None, **body):
     """Confirm one serving of a recipe at a fixed time, with optional overrides.
 
     Args:
         client: The TestClient.
         recipe_id: The recipe to confirm.
+        key: Optional value for the ``Idempotency-Key`` header.
         **body: Request fields that replace the defaults.
 
     Returns:
@@ -49,6 +50,7 @@ def confirm(client, recipe_id, **body):
     return client.post(
         f"/recipes/{recipe_id}/confirm",
         json={"servings": 1, "consumed_at": "2026-10-11T19:00:00", **body},
+        headers={"Idempotency-Key": key} if key is not None else {},
     )
 
 
@@ -82,12 +84,13 @@ def test_confirm_logs_one_serving_and_consumes_inventory(client, stir_fry):
 
 
 def test_retry_with_the_same_key_returns_the_original_meal(client, stir_fry):
-    """A replayed key returns 200 with the first meal and consumes nothing more."""
-    first = confirm(client, stir_fry, idempotency_key=KEY)
+    """A replayed Idempotency-Key returns 200 with the first meal and consumes nothing more."""
+    first = confirm(client, stir_fry, key=KEY)
 
-    retry = confirm(client, stir_fry, idempotency_key=KEY, servings=0.5)
+    retry = confirm(client, stir_fry, key=KEY, servings=0.5)
 
     assert first.status_code == 201
+    assert first.json()["idempotency_key"] == KEY
     assert retry.status_code == 200
     assert retry.json() == first.json()
     assert on_hand(client) == {"Chicken": 200, "Rice": 50}
@@ -95,7 +98,7 @@ def test_retry_with_the_same_key_returns_the_original_meal(client, stir_fry):
 
 
 def test_without_a_key_every_confirmation_logs_a_meal(client, stir_fry):
-    """Two confirmations without a key are two meals."""
+    """Two confirmations without an Idempotency-Key header are two meals."""
     confirm(client, stir_fry, servings=0.5)
     confirm(client, stir_fry, servings=0.5)
 
@@ -105,7 +108,7 @@ def test_without_a_key_every_confirmation_logs_a_meal(client, stir_fry):
 
 def test_shortfall_returns_409_with_details_and_writes_nothing(client, stir_fry):
     """Without the override, a shortfall is reported per ingredient and nothing is logged."""
-    response = confirm(client, stir_fry, servings=2, idempotency_key=KEY)
+    response = confirm(client, stir_fry, key=KEY, servings=2)
 
     assert response.status_code == 409
     assert response.json() == {"detail": {
@@ -139,16 +142,46 @@ def test_unknown_recipe_returns_404(client):
 
 
 def test_invalid_confirmations_are_rejected_with_422(client, stir_fry):
-    """Non-positive servings, timezone-aware times, bad keys, and blank names are rejected."""
+    """Non-positive servings, timezone-aware times, and blank names are rejected."""
     for bad in (
         {"servings": 0},
         {"consumed_at": "2026-10-11T19:00:00Z"},
-        {"idempotency_key": "not-a-uuid"},
         {"name": ""},
     ):
         assert confirm(client, stir_fry, **bad).status_code == 422, bad
 
     assert on_hand(client) == {"Chicken": 300, "Rice": 200}
+
+
+def test_malformed_idempotency_key_header_is_rejected_with_422(client, stir_fry):
+    """An Idempotency-Key header that is not a UUID is rejected before anything is consumed."""
+    response = confirm(client, stir_fry, key="not-a-uuid")
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["header", "Idempotency-Key"]
+    assert on_hand(client) == {"Chicken": 300, "Rice": 200}
+
+
+def test_failed_shortfall_does_not_use_up_the_key(client, stir_fry):
+    """A rejected confirmation leaves its key unused, so a later valid request can use it."""
+    rejected = confirm(client, stir_fry, key=KEY, servings=2)
+
+    accepted = confirm(client, stir_fry, key=KEY, servings=2, allow_shortfall=True)
+
+    assert rejected.status_code == 409
+    assert accepted.status_code == 201
+    assert accepted.json()["idempotency_key"] == KEY
+    assert on_hand(client) == {"Chicken": 100}
+
+
+def test_idempotency_key_in_the_body_is_not_part_of_the_contract(client, stir_fry):
+    """A body idempotency_key field is ignored like any unknown field: no replay protection."""
+    first = confirm(client, stir_fry, servings=0.5, idempotency_key=KEY)
+    second = confirm(client, stir_fry, servings=0.5, idempotency_key=KEY)
+
+    assert (first.status_code, second.status_code) == (201, 201)
+    assert first.json()["idempotency_key"] is None
+    assert len(client.get("/meal-logs", params={"consumed_on": "2026-10-11"}).json()) == 2
 
 
 def test_meal_logs_lists_one_day_in_order(client, stir_fry):
