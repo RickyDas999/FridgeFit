@@ -11,6 +11,7 @@ import {
   type Recommendation,
 } from './api'
 import { formatQuantity, formatScore, formatTime } from './format'
+import RateMeal from './RateMeal'
 import RecommendationDetail from './RecommendationDetail'
 import { useResource, type Loadable } from './useResource'
 
@@ -139,21 +140,27 @@ function InventoryList({ items }: { items: InventoryItem[] }) {
   )
 }
 
-function MealList({ meals }: { meals: MealLog[] }) {
+function MealList(props: {
+  meals: MealLog[]
+  onRated: (meal: MealLog, rating: number | null) => void
+}) {
+  const { meals, onRated } = props
   if (meals.length === 0) {
     return <p className="detail">No meals logged today.</p>
   }
   return (
-    <ul className="plain-list">
+    <ul className="plain-list meal-list">
       {meals.map((meal) => (
         <li key={meal.id}>
           <span>
             <span className="detail">{formatTime(meal.consumed_at)}</span> {meal.name}
+            <span className="detail"> · {Math.round(meal.calories)} kcal</span>
           </span>
-          <span className="detail">
-            {Math.round(meal.calories)} kcal ·{' '}
-            {meal.rating === null ? 'Not rated' : `Rated ${meal.rating}/5`}
-          </span>
+          {meal.rating === null ? (
+            <RateMeal meal={meal} onRated={onRated} />
+          ) : (
+            <span className="detail">Rated {meal.rating}/5</span>
+          )}
         </li>
       ))}
     </ul>
@@ -175,6 +182,14 @@ function Dashboard() {
     setVersion((current) => current + 1)
   }
 
+  // A rating changes the meal's row and its recipe's enjoyment score, so refetch everything.
+  function handleRated(meal: MealLog, rating: number | null) {
+    setNotice(
+      rating === null ? `${meal.name} was already rated.` : `Rated ${meal.name} ${rating}/5.`,
+    )
+    setVersion((current) => current + 1)
+  }
+
   return (
     <>
       {notice && (
@@ -193,7 +208,7 @@ function Dashboard() {
           {(state) => <NutritionSummary state={state} />}
         </Panel>
         <Panel title="Eaten today" state={meals}>
-          {(items) => <MealList meals={items} />}
+          {(items) => <MealList meals={items} onRated={handleRated} />}
         </Panel>
         <Panel title="In the kitchen" state={inventory}>
           {(items) => <InventoryList items={items} />}

@@ -25,7 +25,7 @@ Last updated: 2026-10-12
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: Minimal Demo Frontend.** Slices 1–4 are implemented. Begin each slice only when
+**Active milestone: Minimal Demo Frontend.** Slices 1–5 are implemented. Begin each slice only when
 the developer approves it. Frontend rules are in `docs/architecture.md` § Frontend.
 
 ## Active Milestone: Minimal Demo Frontend
@@ -307,7 +307,8 @@ Implementation behavior worth knowing:
   dashboard fetchers omit date parameters, so the server's "today" applies. `confirmMeal()`
   posts to `/recipes/{id}/confirm` with a caller-supplied `Idempotency-Key` and returns
   `logged` (201, or 200 when replayed) or `shortfall` (409); other errors become readable
-  messages.
+  messages. `rateMeal()` posts to `/meal-logs/{id}/feedback` and returns `rated` or
+  `already_rated` (409).
 - `src/useResource.ts`: the `useResource` hook (loading/error/ready for one request, ignoring
   late responses). A `reloadToken` argument refetches while keeping the current data on
   screen. `src/format.ts`: display formatting (units, 0–100 scores, times, and
@@ -334,6 +335,11 @@ Implementation behavior worth knowing:
   button is disabled while a request is in flight. A shortfall lists what is short (need/have)
   and offers "Log anyway with what I have" (`allow_shortfall: true`, its own key). On success
   the dashboard shows "Logged …" and refetches all four panels; the open detail stays open.
+- `src/RateMeal.tsx` (Slice 5): each unrated meal in "Eaten today" shows 1–5 buttons; rated
+  meals show "Rated N/5". No idempotency key: the backend stores one rating per meal, so a
+  repeat is rejected (409). Buttons are disabled while sending. On success or "already rated"
+  the dashboard shows a notice and refetches, so the stored rating and the recipe's enjoyment
+  score update.
 - `npm run dev` serves it on `http://localhost:5173`; `npm run build` type-checks (`tsc -b`) and
   builds.
 

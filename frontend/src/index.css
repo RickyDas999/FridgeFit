@@ -376,3 +376,34 @@ button.secondary {
   background: none;
   text-decoration: underline;
 }
+
+.meal-list li {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.rate-meal {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.rating-buttons {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.rating-button {
+  min-width: 2rem;
+  padding: 2px 8px;
+  color: var(--text);
+  background: none;
+  border: 1px solid var(--border);
+}
+
+.rating-button:hover:not(:disabled) {
+  color: var(--surface);
+  background: var(--accent);
+  border-color: var(--accent);
+}

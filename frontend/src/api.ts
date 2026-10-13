@@ -175,3 +175,28 @@ export async function confirmMeal(
   }
   return { status: 'logged', meal: await response.json(), replayed: response.status === 200 }
 }
+
+/**
+ * Rate a logged meal from 1 to 5 (POST /meal-logs/{id}/feedback). Each meal can be rated once:
+ * a second rating gets 409, returned as `already_rated` so the caller can show the stored one.
+ */
+export async function rateMeal(
+  mealLogId: number,
+  rating: number,
+): Promise<'rated' | 'already_rated'> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/meal-logs/${mealLogId}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating }),
+    })
+  } catch {
+    throw new Error(`Cannot reach the backend at ${API_BASE_URL}.`)
+  }
+  if (response.status === 409) return 'already_rated'
+  if (!response.ok) {
+    throw new Error(await describeError(response))
+  }
+  return 'rated'
+}
