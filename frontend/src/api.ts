@@ -76,6 +76,17 @@ export type MealLog = Macros & {
   rating: number | null
 }
 
+export type Shortfall = {
+  ingredient_id: number
+  name: string
+  quantity_needed: number
+  quantity_available: number
+}
+
+export type ConfirmResult =
+  | { status: 'logged'; meal: MealLog; replayed: boolean }
+  | { status: 'shortfall'; shortfalls: Shortfall[] }
+
 export type HealthResult = { ok: true } | { ok: false; message: string }
 
 /** Ask the backend's GET /health whether the API and its database are up. */
@@ -117,3 +128,50 @@ export const getInventory = () => getJson<InventoryItem[]>('/inventory')
 export const getRecommendations = () => getJson<Recommendation[]>('/recommendations')
 export const getTodaysMeals = () => getJson<MealLog[]>('/meal-logs')
 export const getRecipe = (recipeId: number) => getJson<Recipe>(`/recipes/${recipeId}`)
+
+/** Turn a FastAPI error response into a readable message (a `detail` string or error list). */
+async function describeError(response: Response): Promise<string> {
+  try {
+    const body: { detail?: unknown } = await response.json()
+    if (typeof body.detail === 'string') return body.detail
+    if (Array.isArray(body.detail)) {
+      return body.detail.map((error: { msg?: string }) => error.msg ?? 'Invalid input').join('; ')
+    }
+  } catch {
+    // Not JSON; fall through to the status code.
+  }
+  return `The backend responded with HTTP ${response.status}.`
+}
+
+/**
+ * Log a meal made from a recipe, consuming its ingredients (POST /recipes/{id}/confirm).
+ *
+ * The caller supplies the Idempotency-Key so it can reuse it when retrying the same submission:
+ * the backend then returns the original meal (HTTP 200) instead of logging it twice. A 409 is
+ * returned as a shortfall result rather than an error, so the caller can offer to log anyway.
+ */
+export async function confirmMeal(
+  recipeId: number,
+  servings: number,
+  options: { allowShortfall: boolean; idempotencyKey: string },
+): Promise<ConfirmResult> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/recipes/${recipeId}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': options.idempotencyKey },
+      body: JSON.stringify({ servings, allow_shortfall: options.allowShortfall }),
+    })
+  } catch {
+    throw new Error(`Cannot reach the backend at ${API_BASE_URL}.`)
+  }
+
+  if (response.status === 409) {
+    const body: { detail: { shortfalls: Shortfall[] } } = await response.json()
+    return { status: 'shortfall', shortfalls: body.detail.shortfalls }
+  }
+  if (!response.ok) {
+    throw new Error(await describeError(response))
+  }
+  return { status: 'logged', meal: await response.json(), replayed: response.status === 200 }
+}

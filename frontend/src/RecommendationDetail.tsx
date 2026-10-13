@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
-import { getRecipe, type Recommendation } from './api'
+import { getRecipe, type MealLog, type Recommendation } from './api'
 import { formatDate, formatQuantity, formatScore } from './format'
+import LogMeal from './LogMeal'
 import { useResource } from './useResource'
 
 /**
@@ -9,7 +10,11 @@ import { useResource } from './useResource'
  * Every score and quantity shown here comes from GET /recommendations or GET /recipes/{id};
  * nothing is recalculated. The backend's ranking weights are deliberately not repeated here.
  */
-function RecommendationDetail({ recommendation }: { recommendation: Recommendation }) {
+function RecommendationDetail(props: {
+  recommendation: Recommendation
+  onMealLogged: (meal: MealLog, servings: number) => void
+}) {
+  const { recommendation, onMealLogged } = props
   const { recipe_id, availability, expiry_urgency, macro_fit, enjoyment, recent_frequency } =
     recommendation
   const loadRecipe = useCallback(() => getRecipe(recipe_id), [recipe_id])
@@ -32,6 +37,13 @@ function RecommendationDetail({ recommendation }: { recommendation: Recommendati
 
   return (
     <div className="recommendation-detail">
+      <LogMeal
+        recipeId={recipe_id}
+        recipeName={recommendation.name}
+        unitOf={unitOf}
+        onLogged={onMealLogged}
+      />
+
       <h3>Why it ranks here</h3>
       <dl className="component-scores">
         {components.map(({ label, value }) => (
