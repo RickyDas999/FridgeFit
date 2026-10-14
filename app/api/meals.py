@@ -5,11 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, NaiveDatetime
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.api.session import SessionDep
 from app.application.meals import confirm_recipe_meal
 from app.domain.meal_confirmation import InsufficientInventoryError
-from app.persistence.models import MealFeedback, MealLog, Recipe
+from app.persistence.models import MealFeedback, MealLog, MealLogIngredient, Recipe
 
 router = APIRouter(tags=["meals"])
 
@@ -189,8 +190,13 @@ def list_meal_logs(session: SessionDep, consumed_on: date | None = None) -> list
         That day's meals.
     """
     day_start = datetime.combine(consumed_on or date.today(), time.min)
+    # Eager-load each meal's lines, their ingredients, and its rating: fixed queries per request.
     meal_logs = session.scalars(
         select(MealLog)
+        .options(
+            selectinload(MealLog.meal_log_ingredients).selectinload(MealLogIngredient.ingredient),
+            selectinload(MealLog.feedback),
+        )
         .where(
             MealLog.consumed_at >= day_start,
             MealLog.consumed_at < day_start + timedelta(days=1),

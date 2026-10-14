@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.api.session import SessionDep
 from app.domain.recipe_macros import calculate_recipe_macros
@@ -180,9 +181,12 @@ def list_recipes(session: SessionDep) -> list[RecipeResponse]:
     Returns:
         All stored recipes.
     """
-    # ponytail: lazy-loads each recipe's ingredients (N+1 queries); fine for one user's
-    # recipe list, add selectinload if it ever gets slow.
-    recipes = session.scalars(select(Recipe).order_by(Recipe.name, Recipe.id))
+    # Eager-load lines and their ingredients in one query each, instead of one per recipe/line.
+    recipes = session.scalars(
+        select(Recipe)
+        .options(selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient))
+        .order_by(Recipe.name, Recipe.id)
+    )
     return [recipe_response(recipe) for recipe in recipes]
 
 

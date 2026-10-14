@@ -201,3 +201,24 @@ def test_as_of_defaults_to_today_and_must_be_a_date(client):
     """Without as_of today is used; a non-date as_of is rejected with 422."""
     assert client.get("/recommendations").status_code == 200
     assert client.get("/recommendations", params={"as_of": "today"}).status_code == 422
+
+
+def test_recommendations_run_a_fixed_number_of_queries(app, client, count_queries):
+    """GET /recommendations does not run extra queries per recipe, ingredient, or rating."""
+    def add_rated_recipe(name):
+        """Add a stocked one-ingredient recipe with one rated meal yesterday."""
+        ingredient = add_ingredient(client, f"{name} base")
+        add_batch(client, ingredient, 500)
+        recipe = add_recipe(client, name, (ingredient, 100, "primary"))
+        log_meal(app, recipe, datetime(2026, 10, 10, 19, 0), rating=4)
+
+    add_rated_recipe("First")
+    with count_queries() as few:
+        recommend(client)
+
+    for n in range(3):
+        add_rated_recipe(f"Recipe {n}")
+    with count_queries() as many:
+        assert len(recommend(client)) == 4
+
+    assert many[0] == few[0]

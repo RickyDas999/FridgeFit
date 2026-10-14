@@ -1,12 +1,18 @@
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.application.nutrition import get_nutrition_state
 from app.domain.recent_frequency import recent_window_start
 from app.domain.recommendations import Recommendation, recommend_recipes
-from app.persistence.models import InventoryBatch, MealFeedback, MealLog, Recipe
+from app.persistence.models import (
+    InventoryBatch,
+    MealFeedback,
+    MealLog,
+    Recipe,
+    RecipeIngredient,
+)
 
 
 def get_recommendations(session: Session, as_of: date) -> list[Recommendation]:
@@ -26,13 +32,21 @@ def get_recommendations(session: Session, as_of: date) -> list[Recommendation]:
         InvalidInputError: If ``as_of`` is a datetime rather than a calendar date.
     """
     remaining = get_nutrition_state(session, as_of).remaining
-    recipes = session.scalars(select(Recipe)).all()
+    # Eager-load what the domain reads per recipe (lines and ingredient nutrition), so scoring
+    # runs a fixed number of queries however many recipes exist.
+    recipes = session.scalars(
+        select(Recipe).options(
+            selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient)
+        )
+    ).all()
     # Empty batches contribute nothing to availability or expiry urgency.
     batches = session.scalars(
         select(InventoryBatch).where(InventoryBatch.quantity_remaining > 0)
     ).all()
     # ponytail: loads every rating; compute per-recipe averages in SQL when it grows.
-    meal_feedback = session.scalars(select(MealFeedback)).all()
+    meal_feedback = session.scalars(
+        select(MealFeedback).options(selectinload(MealFeedback.meal_log))
+    ).all()
 
     day_after = datetime.combine(as_of + timedelta(days=1), time.min)
     recent_meal_logs = session.scalars(
