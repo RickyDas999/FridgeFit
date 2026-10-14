@@ -403,6 +403,12 @@ input {
   font-variant-numeric: tabular-nums;
 }
 
+/* Use-by dates the backend flags as expiring soon read in attention amber. */
+.use-by.soon {
+  font-weight: 600;
+  color: var(--use-by);
+}
+
 /* The next section's rule closes the table; avoid a doubled line. */
 .ingredients tbody tr:last-child th,
 .ingredients tbody tr:last-child td {

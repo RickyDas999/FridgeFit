@@ -31,3 +31,17 @@ export function formatDate(isoDate: string): string {
   const [year, month, day] = isoDate.split('-').map(Number)
   return new Date(year, month - 1, day).toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
+
+/**
+ * Format an API use-by date relative to today: "Today", "Tomorrow", or a date like "Oct 18".
+ * Relative wording uses the browser's date; whether it is expiring soon comes from the API.
+ */
+export function formatUseBy(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const days = Math.round((new Date(year, month - 1, day).getTime() - today.getTime()) / 86_400_000)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Tomorrow'
+  return formatDate(isoDate)
+}

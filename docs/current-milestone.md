@@ -134,6 +134,9 @@ Implementation behavior worth knowing:
   input are ignored.
 - Each `Recommendation.expiry_urgency.expired_batches` lists batches past their use-by date, as
   warnings.
+- `Recommendation.expiry_urgency.ingredients` gives each recipe ingredient's earliest unexpired
+  use-by date among batches with stock (the date its urgency comes from; None when undated or
+  only expired) and `expiring_soon` (within 2 days). The score itself is unchanged by this.
 
 ### Input validation
 
@@ -198,8 +201,9 @@ Implementation behavior worth knowing:
   - `GET /recommendations?as_of=YYYY-MM-DD`: `as_of` defaults to today on the server's clock.
     Eligible recipes, highest score first, each with `score` and its components: availability
     (per ingredient: `quantity_per_serving`, `quantity_on_hand`, `fraction_available`,
-    `is_missing`), expiry urgency (with expired batches as warnings), macro fit (null without a
-    goal), enjoyment, and recent frequency.
+    `is_missing`), expiry urgency (with expired batches as warnings, and per ingredient
+    `use_by_date` and `expiring_soon`), macro fit (null without a goal), enjoyment, and recent
+    frequency.
   - `POST /recipes/{recipe_id}/confirm`: body `servings` (> 0, fractions allowed),
     `consumed_at` (naive local time, defaults to now), optional `name`, and `allow_shortfall`
     (default false). The idempotency key is the optional `Idempotency-Key` request header (a
@@ -276,7 +280,9 @@ Implementation behavior worth knowing:
 - `src/RecommendationDetail.tsx` (Slice 3): clicking a recommendation expands its detail
   (one open at a time). It shows the four component scores (macro fit "No goal" when null) but
   not the backend's weights; each ingredient's have/need per serving with "Missing" or "Short"
-  tags (from `is_missing` and `fraction_available`); expired batches by name and use-by date;
+  tags (from `is_missing` and `fraction_available`) and a "Use by" column ("Today", "Tomorrow",
+  or a date; amber when the API flags `expiring_soon`; "–" when none); expired batches by name
+  and use-by date; a line explaining that expiry urgency ignores already-expired food;
   enjoyment and recent frequency; and recipe basics — prep time, servings, per-serving macros,
   instructions — from `GET /recipes/{id}`, loaded when the detail opens (which also supplies
   ingredient units).
@@ -308,7 +314,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-238 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+243 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 

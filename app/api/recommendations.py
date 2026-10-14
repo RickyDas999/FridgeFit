@@ -39,11 +39,20 @@ class ExpiredBatchResponse(BaseModel):
     use_by_date: date
 
 
+class IngredientUseByResponse(BaseModel):
+    """When one ingredient needs using: its earliest unexpired use-by date, if it has one."""
+
+    ingredient_id: int
+    use_by_date: date | None
+    expiring_soon: bool
+
+
 class ExpiryUrgencyResponse(BaseModel):
     """The expiry-urgency component: higher means ingredients need using sooner."""
 
     score: float
     expired_batches: list[ExpiredBatchResponse]
+    ingredients: list[IngredientUseByResponse]
 
 
 class MacroFitResponse(BaseModel):
@@ -120,6 +129,10 @@ def recommendation_response(recommendation: Recommendation) -> RecommendationRes
                     use_by_date=batch.use_by_date,
                 )
                 for batch in recommendation.expiry_urgency.expired_batches
+            ],
+            ingredients=[
+                IngredientUseByResponse(**item._asdict())
+                for item in recommendation.expiry_urgency.ingredients
             ],
         ),
         macro_fit=MacroFitResponse(
