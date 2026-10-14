@@ -36,8 +36,6 @@ work until the developer approves the next milestone and its scope.
 
 Deliberate shortcuts and cleanup, recorded so they are not lost:
 
-- `get_recommendations` loads every MealFeedback row to average ratings; compute per-recipe
-  averages in SQL as history grows.
 - Two concurrent confirmations with the same new idempotency key are not handled: the unique
   constraint rejects the second (a 500), so nothing is logged twice.
 - New database constraints (e.g. unique recipe names) reach an existing `fridgefit.db` only if it
@@ -110,9 +108,9 @@ Implementation behavior worth knowing:
 | `availability.py` | `assess_recipe_availability(recipe, inventory_totals)` |
 | `expiry_urgency.py` | `assess_recipe_expiry_urgency(recipe, batches_by_ingredient, as_of)` |
 | `macro_fit.py` | `assess_macro_fit(recipe, remaining)` |
-| `enjoyment.py` | `group_ratings_by_recipe(meal_feedback)`, `assess_recipe_enjoyment(recipe, ratings_by_recipe)` |
+| `enjoyment.py` | `assess_recipe_enjoyment(recipe, rating_summaries)`, `RatingSummary(average, count)` |
 | `recent_frequency.py` | `recent_window_start(as_of)`, `group_meal_dates_by_recipe(meal_logs, as_of)`, `assess_recent_frequency(recipe, meal_dates_by_recipe, last_eaten_by_recipe, as_of)` |
-| `recommendations.py` | `recommend_recipes(recipes, batches, as_of, remaining_macros, meal_feedback, recent_meal_logs, last_eaten_by_recipe)`, `combine_scores(scores)` |
+| `recommendations.py` | `recommend_recipes(recipes, batches, as_of, remaining_macros, rating_summaries, recent_meal_logs, last_eaten_by_recipe)`, `combine_scores(scores)` |
 
 - Recommendations describe cooking one serving: availability compares stock with each
   ingredient's per-serving quantity (reported as `IngredientAvailability.quantity_per_serving`),
@@ -123,8 +121,10 @@ Implementation behavior worth knowing:
 - `remaining_macros` is required but may be None (no nutrition goal in effect yet). Macro fit is
   then skipped, `Recommendation.macro_fit` is None, and `combine_scores` rescales the remaining
   default weights to sum to 1. This is the only case where weights are rescaled.
-- `meal_feedback` is required; pass an empty sequence when nothing has been rated. Enjoyment is
-  always scored (0.5 when unrated), so with a nutrition goal all four weights apply unscaled.
+- `rating_summaries` is required: `{recipe_id: RatingSummary(average, count)}` for recipes with
+  ratings (manual meals excluded); pass an empty mapping when nothing has been rated. Enjoyment
+  is always scored (0.5 when unrated), so with a nutrition goal all four weights apply
+  unscaled.
 - `recent_meal_logs` (meals from `recent_window_start(as_of)` through `as_of`) and
   `last_eaten_by_recipe` (each recipe's latest meal date from full history, e.g. a
   `MAX ... GROUP BY` query) are required and used only for `Recommendation.recent_frequency`;
@@ -149,7 +149,8 @@ Implementation behavior worth knowing:
   - FEFO batch lists that mix ingredients;
   - a `datetime` passed as `as_of` (nutrition state, expiry urgency, recent frequency,
     recommendations);
-  - ratings that are not whole numbers from 1 to 5.
+  - rating summaries whose average is outside 1-5 or that summarize no ratings (each stored
+    rating is a whole number 1-5 by database check constraint).
 - Persistence never imports from `app/domain/`.
 
 ### HTTP API (`app/api/`)
@@ -222,7 +223,7 @@ Implementation behavior worth knowing:
 
 - List endpoints eager-load the relationships they read with `selectinload`, so their query
   count is fixed however much data exists (no N+1): `GET /recipes` (lines → ingredient, 3
-  queries), `get_recommendations` (recipe lines → ingredient, and each rating's meal; about 10),
+  queries), `get_recommendations` (recipe lines → ingredient; 9 in total),
   and `GET /meal-logs` (lines → ingredient, and the rating; 4).
 - Single-item paths (`GET /recipes/{id}`, `POST /recipes`, confirm, feedback) still load lazily;
   their cost is bounded by one recipe or meal.
@@ -236,10 +237,11 @@ Implementation behavior worth knowing:
   (`select_applicable_goal`, `calculate_remaining_macros`). Used by `GET /nutrition-state`;
   read-only.
 - `recommendations.py`: `get_recommendations(session, as_of)` loads recipes, batches with stock,
-  remaining macros (via `get_nutrition_state`), all meal feedback, the recent-frequency window's
-  meals, and each recipe's last-eaten date (`MAX(consumed_at) ... GROUP BY recipe_id`), then
-  calls `recommend_recipes`. Meal history is never loaded in full; meal feedback still is
-  (marked `ponytail:`, to be aggregated in SQL later). Read-only.
+  remaining macros (via `get_nutrition_state`), each recipe's rating average and count
+  (`AVG`/`COUNT ... GROUP BY recipe_id`, manual meals excluded, `AVG` cast to float so
+  PostgreSQL's NUMERIC does not arrive as `Decimal`), the recent-frequency window's meals, and
+  each recipe's last-eaten date (`MAX(consumed_at) ... GROUP BY recipe_id`), then calls
+  `recommend_recipes`. Neither meal history nor ratings are loaded in full. Read-only.
 - `meals.py`: `confirm_recipe_meal(session, recipe, ...)` returns the existing MealLog (with
   `created=False`) when the idempotency key was already confirmed; otherwise calls
   `confirm_meal`, which writes the key in its own atomic commit. Concurrent requests with the
@@ -323,7 +325,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-246 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+245 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 

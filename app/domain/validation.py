@@ -121,18 +121,23 @@ def validate_calendar_date(as_of: date) -> None:
         raise InvalidInputError(f"Expected a calendar date, got {as_of!r}")
 
 
-def validate_ratings(ratings: Sequence[int]) -> None:
-    """Check that every rating is a whole number from 1 to 5.
+def validate_rating_summary(average: float, count: int) -> None:
+    """Check that a recipe's rating summary could come from 1-5 ratings.
+
+    Each stored rating is a whole number from 1 to 5 (a database check constraint), so their
+    average must lie in 1-5 and there must be at least one.
 
     Args:
-        ratings: The ratings to check.
+        average: The average rating.
+        count: How many ratings were averaged.
 
     Raises:
-        InvalidInputError: If any rating is not an integer from 1 to 5.
+        InvalidInputError: If the average is outside 1-5 or the count is not a positive integer.
     """
-    for rating in ratings:
-        if isinstance(rating, bool) or not isinstance(rating, int) or not 1 <= rating <= 5:
-            raise InvalidInputError(f"Ratings must be whole numbers from 1 to 5, got {rating!r}")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        raise InvalidInputError(f"A rating summary needs at least one rating, got {count!r}")
+    if not 1 <= average <= 5:
+        raise InvalidInputError(f"An average rating must be from 1 to 5, got {average!r}")
 
 
 def validate_servings(servings: float) -> None:

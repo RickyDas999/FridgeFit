@@ -3,11 +3,7 @@ from datetime import date
 from typing import NamedTuple, Sequence
 
 from app.domain.availability import RecipeAvailability, assess_recipe_availability
-from app.domain.enjoyment import (
-    RecipeEnjoyment,
-    assess_recipe_enjoyment,
-    group_ratings_by_recipe,
-)
+from app.domain.enjoyment import RatingSummary, RecipeEnjoyment, assess_recipe_enjoyment
 from app.domain.expiry_urgency import RecipeExpiryUrgency, assess_recipe_expiry_urgency
 from app.domain.inventory_aggregation import aggregate_inventory_by_ingredient
 from app.domain.macro_fit import MacroFit, assess_macro_fit
@@ -18,7 +14,7 @@ from app.domain.recent_frequency import (
     group_meal_dates_by_recipe,
 )
 from app.domain.validation import validate_calendar_date
-from app.persistence.models import InventoryBatch, MealFeedback, MealLog, Recipe
+from app.persistence.models import InventoryBatch, MealLog, Recipe
 
 DEFAULT_WEIGHTS = {
     "availability": 0.4,
@@ -61,7 +57,7 @@ def recommend_recipes(
     batches: Sequence[InventoryBatch],
     as_of: date,
     remaining_macros: RemainingMacros | None,
-    meal_feedback: Sequence[MealFeedback],
+    rating_summaries: dict[int, RatingSummary],
     recent_meal_logs: Sequence[MealLog],
     last_eaten_by_recipe: dict[int, date],
 ) -> list[Recommendation]:
@@ -76,8 +72,9 @@ def recommend_recipes(
         remaining_macros: Today's remaining macros, as returned by
             ``calculate_remaining_macros``. Pass None when no nutrition goal is in effect yet;
             macro fit is then left out of the ranking.
-        meal_feedback: The user's meal ratings. Each one's ``meal_log`` must be loadable. Pass
-            an empty sequence when nothing has been rated yet.
+        rating_summaries: Mapping of ``recipe_id`` to the average and count of the user's
+            ratings of meals made from it (e.g. from an ``AVG``/``COUNT ... GROUP BY`` query).
+            Pass an empty mapping when nothing has been rated yet.
         recent_meal_logs: Meals in the recent-frequency window (from ``recent_window_start``
             through ``as_of``); older meals may be included but are not needed. Used only to
             report recent frequency; it never affects the ranking.
@@ -89,10 +86,9 @@ def recommend_recipes(
 
     Raises:
         InvalidInputError: If ``as_of`` is not a calendar date, a recipe is invalid, or a rating
-            is outside 1-5.
+            summary has an average outside 1-5 or no ratings.
     """
     validate_calendar_date(as_of)
-    ratings_by_recipe = group_ratings_by_recipe(meal_feedback)
     meal_dates_by_recipe = group_meal_dates_by_recipe(recent_meal_logs, as_of)
 
     inventory_totals = aggregate_inventory_by_ingredient(batches)
@@ -113,7 +109,7 @@ def recommend_recipes(
             macro_fit = assess_macro_fit(recipe, remaining_macros)
             scores["macro_fit"] = macro_fit.score
 
-        enjoyment = assess_recipe_enjoyment(recipe, ratings_by_recipe)
+        enjoyment = assess_recipe_enjoyment(recipe, rating_summaries)
         scores["enjoyment"] = enjoyment.score
 
         recommendations.append(

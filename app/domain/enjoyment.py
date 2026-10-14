@@ -1,8 +1,7 @@
-from collections import defaultdict
-from typing import NamedTuple, Sequence
+from typing import NamedTuple
 
-from app.domain.validation import validate_ratings
-from app.persistence.models import MealFeedback, Recipe
+from app.domain.validation import validate_rating_summary
+from app.persistence.models import Recipe
 
 MIN_RATING = 1
 MAX_RATING = 5
@@ -17,32 +16,15 @@ class RecipeEnjoyment(NamedTuple):
     rating_count: int
 
 
-def group_ratings_by_recipe(meal_feedback: Sequence[MealFeedback]) -> dict[int, list[int]]:
-    """Group 1-5 ratings by the recipe each rated meal was made from.
+class RatingSummary(NamedTuple):
+    """A recipe's ratings, summarized: their average and how many there are."""
 
-    Ratings of manual meals that did not come from a recipe are ignored.
-
-    Args:
-        meal_feedback: MealFeedback rows; each one's ``meal_log`` must be loadable.
-
-    Returns:
-        Mapping of ``recipe_id`` to that recipe's ratings.
-
-    Raises:
-        InvalidInputError: If any rating is outside 1-5.
-    """
-    validate_ratings([feedback.rating for feedback in meal_feedback])
-
-    ratings = defaultdict(list)
-    for feedback in meal_feedback:
-        recipe_id = feedback.meal_log.recipe_id
-        if recipe_id is not None:
-            ratings[recipe_id].append(feedback.rating)
-    return ratings
+    average: float
+    count: int
 
 
 def assess_recipe_enjoyment(
-    recipe: Recipe, ratings_by_recipe: dict[int, list[int]]
+    recipe: Recipe, rating_summaries: dict[int, RatingSummary]
 ) -> RecipeEnjoyment:
     """Score a recipe by the average of the user's ratings of meals made from it.
 
@@ -51,16 +33,22 @@ def assess_recipe_enjoyment(
 
     Args:
         recipe: The recipe to score.
-        ratings_by_recipe: Mapping of ``recipe_id`` to ratings, as returned by
-            ``group_ratings_by_recipe``.
+        rating_summaries: Mapping of ``recipe_id`` to its ratings' average and count, covering
+            only meals made from a recipe (ratings of manual meals count toward none). Recipes
+            with no ratings are simply absent.
 
     Returns:
         The 0-1 enjoyment score, the average rating (None if unrated), and the rating count.
+
+    Raises:
+        InvalidInputError: If the recipe's summary has an average outside 1-5 or no ratings.
     """
-    ratings = ratings_by_recipe.get(recipe.id, [])
-    if not ratings:
+    summary = rating_summaries.get(recipe.id)
+    if summary is None:
         return RecipeEnjoyment(score=UNRATED_SCORE, average_rating=None, rating_count=0)
 
-    average = sum(ratings) / len(ratings)
-    score = (average - MIN_RATING) / (MAX_RATING - MIN_RATING)
-    return RecipeEnjoyment(score=score, average_rating=average, rating_count=len(ratings))
+    validate_rating_summary(summary.average, summary.count)
+    score = (summary.average - MIN_RATING) / (MAX_RATING - MIN_RATING)
+    return RecipeEnjoyment(
+        score=score, average_rating=summary.average, rating_count=summary.count
+    )
