@@ -168,3 +168,12 @@ AGENTS.md          contract for the independent AI reviewer
   (lifespan) create missing tables with `Base.metadata.create_all`. This never alters existing
   tables, so a schema change to an existing database needs the database recreated until
   migrations exist.
+- Queries that load a list eager-load the relationships the code reads (`selectinload`), so a
+  list endpoint runs a fixed number of queries however many rows exist; lazy loading one query
+  per row (N+1) is not acceptable on list paths. Single-item paths, whose cost is bounded by
+  one row, may load lazily.
+- Each list endpoint has a query-count test (the `count_queries` fixture in
+  `tests/conftest.py`) asserting its count does not grow when more rows are added.
+- When the domain needs only a summary of data that grows without bound (meal history,
+  ratings), the query filters or aggregates in SQL (`WHERE`, `GROUP BY` with `MAX`, `AVG`,
+  `COUNT`) and the domain function accepts that summary; the domain still owns every rule.
