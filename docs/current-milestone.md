@@ -280,18 +280,18 @@ Implementation behavior worth knowing:
   late responses). A `reloadToken` argument refetches while keeping the current data on
   screen. `src/format.ts`: display formatting (units, 0–100 scores, times, and
   calendar dates built from their parts to avoid a UTC off-by-one-day).
-- `src/App.tsx`: header with the backend status (and "Check again" when unavailable), then the
-  dashboard.
-- `src/Dashboard.tsx`: the read-only dashboard (Slice 2). Four panels, each loading on its own
-  with its own loading and error state: "What to make" (ranked recommendations with score,
-  availability %, missing ingredients, expired-batch count, times eaten this week), "Today's
-  nutrition" (remaining of goal per macro, "over" when negative, a message when no goal
-  applies), "Eaten today" (time, name, calories, rating), and "In the kitchen" (inventory with
+- `src/App.tsx`: header with the backend status ("Connected" or "Offline", with "Try again"
+  when offline), then the dashboard.
+- `src/Dashboard.tsx`: the dashboard (Slice 2). Four sections, each loading on its own with
+  its own loading and error state: "What to make" (ranked recommendations with score,
+  availability %, missing ingredients, expired-batch count, times eaten this week), "Today"
+  (calories and macros left of the goal, "over" when negative, a message when no goal
+  applies), "Eaten today" (time, name, calories, rating), and "In the fridge" (inventory with
   units). It only formats API values; no domain calculation happens in the frontend.
 - `src/RecommendationDetail.tsx` (Slice 3): clicking a recommendation expands its detail
   (one open at a time). It shows the four component scores (macro fit "No goal" when null) but
-  not the backend's weights; each ingredient's have/need per serving with "Missing" or "Short"
-  tags (from `is_missing` and `fraction_available`) and a "Use by" column ("Today", "Tomorrow",
+  not the backend's weights; a need/have table per serving with "None" or "N% of need" flags
+  (from `is_missing` and `fraction_available`) and a "Use by" column ("Today", "Tomorrow",
   or a date; amber when the API flags `expiring_soon`; "–" when none); expired batches by name
   and use-by date; a line explaining that expiry urgency ignores already-expired food;
   enjoyment and recent frequency; and recipe basics — prep time, servings, per-serving macros,
