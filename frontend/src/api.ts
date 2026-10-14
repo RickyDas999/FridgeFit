@@ -42,6 +42,8 @@ export type Recommendation = {
   expiry_urgency: {
     score: number
     expired_batches: { batch_id: number; ingredient_id: number; use_by_date: string }[]
+    // Earliest unexpired use-by date per recipe ingredient (null when undated or only expired).
+    ingredients: { ingredient_id: number; use_by_date: string | null; expiring_soon: boolean }[]
   }
   macro_fit: { score: number; per_serving: Macros } | null
   enjoyment: { score: number; average_rating: number | null; rating_count: number }

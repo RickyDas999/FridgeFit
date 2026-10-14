@@ -155,6 +155,26 @@ def test_expired_batches_are_surfaced_as_warnings(client):
     assert bowl["availability"]["ingredients"][0]["fraction_available"] == 1.0
 
 
+def test_each_ingredient_reports_when_it_needs_using(client):
+    """Every recipe ingredient gets its soonest unexpired use-by date and an expiring-soon flag."""
+    rice, beans, corn = (add_ingredient(client, n) for n in ("Rice", "Beans", "Corn"))
+    add_batch(client, rice, 100, use_by_date="2026-10-12")  # tomorrow: expiring soon
+    add_batch(client, beans, 100, use_by_date="2026-10-20")
+    add_batch(client, beans, 100, use_by_date="2026-10-09")  # expired: not the reported date
+    add_batch(client, corn, 100)  # undated
+    add_recipe(
+        client, "Bowl", (rice, 100, "primary"), (beans, 100, "primary"), (corn, 100, "supporting")
+    )
+
+    expiry = recommend(client)["Bowl"]["expiry_urgency"]
+
+    assert expiry["ingredients"] == [
+        {"ingredient_id": rice, "use_by_date": "2026-10-12", "expiring_soon": True},
+        {"ingredient_id": beans, "use_by_date": "2026-10-20", "expiring_soon": False},
+        {"ingredient_id": corn, "use_by_date": None, "expiring_soon": False},
+    ]
+
+
 def test_recent_frequency_and_enjoyment_come_from_meal_history(app, client):
     """Recent count uses the 7-day window, last eaten uses all history, ratings feed enjoyment."""
     rice = add_ingredient(client, "Rice")

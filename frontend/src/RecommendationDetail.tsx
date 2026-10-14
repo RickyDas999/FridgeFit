@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { getRecipe, type MealLog, type Recommendation } from './api'
-import { formatDate, formatQuantity, formatScore } from './format'
+import { formatDate, formatQuantity, formatScore, formatUseBy } from './format'
 import LogMeal from './LogMeal'
 import { useResource } from './useResource'
 
@@ -24,6 +24,8 @@ function RecommendationDetail(props: {
   const recipeLines = recipe.status === 'ready' ? recipe.data.ingredients : []
   const unitOf = (ingredientId: number) =>
     recipeLines.find((line) => line.ingredient_id === ingredientId)?.canonical_unit
+  const useByOf = (ingredientId: number) =>
+    expiry_urgency.ingredients.find((item) => item.ingredient_id === ingredientId)
   const nameOf = (ingredientId: number) =>
     availability.ingredients.find((item) => item.ingredient_id === ingredientId)?.name ??
     `Ingredient ${ingredientId}`
@@ -69,7 +71,8 @@ function RecommendationDetail(props: {
       </dl>
       <p className="muted">
         Each part is scored out of 100. The backend weighs them into the overall score of{' '}
-        {formatScore(recommendation.score)}.
+        {formatScore(recommendation.score)}. Expiry urgency favors food that's about to expire;
+        food already past its date doesn't count.
       </p>
 
       <h3>For one serving</h3>
@@ -79,11 +82,13 @@ function RecommendationDetail(props: {
             <th scope="col">Ingredient</th>
             <th scope="col">Need</th>
             <th scope="col">Have</th>
+            <th scope="col">Use by</th>
           </tr>
         </thead>
         <tbody>
           {availability.ingredients.map((item) => {
             const unit = unitOf(item.ingredient_id)
+            const useBy = useByOf(item.ingredient_id)
             return (
               <tr key={item.ingredient_id}>
                 <th scope="row">
@@ -100,6 +105,9 @@ function RecommendationDetail(props: {
                       <span className="flag">{formatScore(item.fraction_available)}% of need</span>
                     )
                   )}
+                </td>
+                <td className={useBy?.expiring_soon ? 'use-by soon' : 'use-by'}>
+                  {useBy?.use_by_date ? formatUseBy(useBy.use_by_date) : '–'}
                 </td>
               </tr>
             )

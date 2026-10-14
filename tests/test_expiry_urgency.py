@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from app.domain.expiry_urgency import assess_recipe_expiry_urgency
+from app.domain.expiry_urgency import IngredientUseBy, assess_recipe_expiry_urgency
 from app.errors import InvalidInputError
 from app.persistence.enums import IngredientRole
 from app.persistence.models import InventoryBatch, Recipe, RecipeIngredient
@@ -160,3 +160,30 @@ def test_datetime_as_of_is_rejected():
     """Expiry urgency requires a calendar date, not a datetime."""
     with pytest.raises(InvalidInputError):
         assess_recipe_expiry_urgency(make_recipe(1), {}, datetime(2026, 3, 10))
+
+
+def test_each_ingredient_reports_its_earliest_unexpired_use_by_date():
+    """Each ingredient reports its soonest unexpired use-by date, or None if there is none."""
+    result = assess(
+        make_recipe(1, 2, 3, 4),
+        make_batch(1, 5),
+        make_batch(1, 3),
+        make_batch(1, -1),  # expired: a warning, never the reported date
+        make_batch(2, None),  # undated
+        make_batch(3, -2),  # only expired stock
+    )
+
+    assert result.ingredients == [
+        IngredientUseBy(1, AS_OF + timedelta(days=3), expiring_soon=False),
+        IngredientUseBy(2, None, expiring_soon=False),
+        IngredientUseBy(3, None, expiring_soon=False),
+        IngredientUseBy(4, None, expiring_soon=False),
+    ]
+
+
+@pytest.mark.parametrize("days, expected", [(0, True), (2, True), (3, False)])
+def test_expiring_soon_follows_the_two_day_rule(days, expected):
+    """An ingredient is expiring soon when its use-by date is today or within 2 days."""
+    result = assess(make_recipe(1), make_batch(1, days))
+
+    assert result.ingredients[0].expiring_soon is expected
