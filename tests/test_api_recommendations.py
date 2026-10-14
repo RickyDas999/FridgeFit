@@ -197,6 +197,19 @@ def test_recent_frequency_and_enjoyment_come_from_meal_history(app, client):
     assert result["Rice bowl"]["enjoyment"]["average_rating"] == pytest.approx(4.5)
 
 
+def test_manual_meal_ratings_count_toward_no_recipe(app, client):
+    """Ratings of meals not made from a recipe never reach any recipe's enjoyment."""
+    rice = add_ingredient(client, "Rice")
+    add_batch(client, rice, 500)
+    bowl = add_recipe(client, "Rice bowl", (rice, 100, "primary"))
+    log_meal(app, None, datetime(2026, 10, 10, 12, 0), rating=1)  # manual meal, rated 1
+    log_meal(app, bowl, datetime(2026, 10, 10, 19, 0), rating=5)
+
+    enjoyment = recommend(client)["Rice bowl"]["enjoyment"]
+
+    assert enjoyment == {"score": 1.0, "average_rating": 5.0, "rating_count": 1}
+
+
 def test_as_of_defaults_to_today_and_must_be_a_date(client):
     """Without as_of today is used; a non-date as_of is rejected with 422."""
     assert client.get("/recommendations").status_code == 200

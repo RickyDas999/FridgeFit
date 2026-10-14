@@ -1,52 +1,20 @@
 import pytest
 
-from app.domain.enjoyment import assess_recipe_enjoyment, group_ratings_by_recipe
+from app.domain.enjoyment import RatingSummary, assess_recipe_enjoyment
 from app.errors import InvalidInputError
-from app.persistence.models import MealFeedback, MealLog, Recipe
-
-
-def make_feedback(rating, recipe_id):
-    """Build an unsaved MealFeedback for a meal made from the given recipe.
-
-    Args:
-        rating: The 1-5 rating.
-        recipe_id: Recipe the rated meal came from, or None for a manual meal.
-
-    Returns:
-        A new, unpersisted MealFeedback with its MealLog attached.
-    """
-    return MealFeedback(rating=rating, meal_log=MealLog(recipe_id=recipe_id))
+from app.persistence.models import Recipe
 
 
 def make_recipe(recipe_id):
     """Build an unsaved Recipe with the given id.
 
     Args:
-        recipe_id: Id to give the recipe, used to match ratings.
+        recipe_id: Id to give the recipe, used to match rating summaries.
 
     Returns:
         A new, unpersisted Recipe.
     """
     return Recipe(id=recipe_id, name="Test Recipe", instructions=[], prep_minutes=10, servings=1)
-
-
-def test_ratings_are_grouped_by_recipe():
-    """Each rating is filed under the recipe its meal was made from."""
-    feedback = [make_feedback(5, 1), make_feedback(3, 1), make_feedback(4, 2)]
-
-    assert group_ratings_by_recipe(feedback) == {1: [5, 3], 2: [4]}
-
-
-def test_ratings_of_manual_meals_are_ignored():
-    """A rated meal with no recipe does not affect any recipe's enjoyment."""
-    assert group_ratings_by_recipe([make_feedback(5, None)]) == {}
-
-
-@pytest.mark.parametrize("rating", [0, 6, 3.5, True])
-def test_out_of_range_or_non_integer_ratings_are_rejected(rating):
-    """Ratings must be whole numbers from 1 to 5."""
-    with pytest.raises(InvalidInputError):
-        group_ratings_by_recipe([make_feedback(rating, 1)])
 
 
 def test_unrated_recipe_scores_neutral():
@@ -58,17 +26,17 @@ def test_unrated_recipe_scores_neutral():
     assert enjoyment.rating_count == 0
 
 
-@pytest.mark.parametrize(("rating", "expected"), [(1, 0.0), (3, 0.5), (5, 1.0)])
-def test_rating_maps_linearly_onto_zero_to_one(rating, expected):
-    """A rating of 1 scores 0, 3 scores 0.5, and 5 scores 1.0."""
-    enjoyment = assess_recipe_enjoyment(make_recipe(1), {1: [rating]})
+@pytest.mark.parametrize(("average", "expected"), [(1, 0.0), (3, 0.5), (5, 1.0)])
+def test_average_rating_maps_linearly_onto_zero_to_one(average, expected):
+    """An average of 1 scores 0, 3 scores 0.5, and 5 scores 1.0."""
+    enjoyment = assess_recipe_enjoyment(make_recipe(1), {1: RatingSummary(average, 1)})
 
     assert enjoyment.score == pytest.approx(expected)
 
 
-def test_multiple_ratings_are_averaged():
-    """Several ratings of one recipe combine as a simple average."""
-    enjoyment = assess_recipe_enjoyment(make_recipe(1), {1: [5, 3, 4]})
+def test_summary_average_and_count_are_reported():
+    """The recipe's average and rating count come straight from its summary."""
+    enjoyment = assess_recipe_enjoyment(make_recipe(1), {1: RatingSummary(4.0, 3)})
 
     assert enjoyment.average_rating == pytest.approx(4)
     assert enjoyment.score == pytest.approx(0.75)
@@ -76,7 +44,22 @@ def test_multiple_ratings_are_averaged():
 
 
 def test_other_recipes_ratings_do_not_count():
-    """Only ratings of meals made from this recipe affect its enjoyment."""
-    enjoyment = assess_recipe_enjoyment(make_recipe(1), {2: [1, 1]})
+    """Only this recipe's summary affects its enjoyment."""
+    enjoyment = assess_recipe_enjoyment(make_recipe(1), {2: RatingSummary(1.0, 2)})
 
     assert enjoyment.score == 0.5
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        RatingSummary(0.5, 1),
+        RatingSummary(5.5, 1),
+        RatingSummary(3.0, 0),
+        RatingSummary(3.0, True),
+    ],
+)
+def test_impossible_rating_summaries_are_rejected(summary):
+    """An average outside 1-5, or a summary of no ratings, cannot come from 1-5 ratings."""
+    with pytest.raises(InvalidInputError):
+        assess_recipe_enjoyment(make_recipe(1), {1: summary})
