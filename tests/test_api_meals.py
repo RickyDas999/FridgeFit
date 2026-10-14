@@ -273,3 +273,22 @@ def test_rating_feeds_the_recipes_enjoyment_score(client, stir_fry):
     assert recommendations[0]["enjoyment"] == {
         "score": 1.0, "average_rating": 5.0, "rating_count": 1,
     }
+
+
+def test_listing_meal_logs_runs_a_fixed_number_of_queries(client, count_queries, stir_fry):
+    """GET /meal-logs does not run extra queries per meal, ingredient line, or rating."""
+    def log_and_rate():
+        """Log a quarter serving and rate it."""
+        meal_id = confirm(client, stir_fry, servings=0.25).json()["id"]
+        client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": 4})
+
+    log_and_rate()
+    with count_queries() as few:
+        client.get("/meal-logs", params={"consumed_on": "2026-10-11"})
+
+    for _ in range(3):
+        log_and_rate()
+    with count_queries() as many:
+        assert len(client.get("/meal-logs", params={"consumed_on": "2026-10-11"}).json()) == 4
+
+    assert many[0] == few[0]

@@ -168,3 +168,20 @@ def test_duplicate_recipe_name_is_rejected_with_409(client, stir_fry):
     assert response.status_code == 409
     assert response.json() == {"detail": "Recipe 'Chicken stir fry' already exists"}
     assert len(client.get("/recipes").json()) == 1
+
+
+def test_listing_recipes_runs_a_fixed_number_of_queries(client, count_queries, stir_fry):
+    """GET /recipes does not run extra queries per recipe or per ingredient (no N+1)."""
+    client.post("/recipes", json=stir_fry)
+    with count_queries() as few:
+        client.get("/recipes")
+
+    for n in range(3):
+        extra = add_ingredient(client, f"Extra {n}", 100, 10, 10, 1)
+        client.post("/recipes", json={**stir_fry, "name": f"Recipe {n}", "ingredients": [
+            *stir_fry["ingredients"], {"ingredient_id": extra, "quantity": 50, "role": "optional"},
+        ]})
+    with count_queries() as many:
+        assert len(client.get("/recipes").json()) == 4
+
+    assert many[0] == few[0]

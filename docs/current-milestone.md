@@ -38,8 +38,6 @@ Deliberate shortcuts and cleanup, recorded so they are not lost:
 
 - `get_recommendations` loads every MealFeedback row to average ratings; compute per-recipe
   averages in SQL as history grows.
-- Recipes, their ingredients, and ratings' meals are lazy-loaded (N+1 queries) in
-  `GET /recipes` and recommendations; add `selectinload` if it gets slow.
 - Two concurrent confirmations with the same new idempotency key are not handled: the unique
   constraint rejects the second (a 500), so nothing is logged twice.
 - New database constraints (e.g. unique recipe names) reach an existing `fridgefit.db` only if it
@@ -220,6 +218,17 @@ Implementation behavior worth knowing:
     number (`true`, `"4"`, and `4.0` → 422). Missing meal → 404; already rated → 409. Manual
     meals can be rated; their ratings count toward no recipe.
 
+### Query loading
+
+- List endpoints eager-load the relationships they read with `selectinload`, so their query
+  count is fixed however much data exists (no N+1): `GET /recipes` (lines → ingredient, 3
+  queries), `get_recommendations` (recipe lines → ingredient, and each rating's meal; about 10),
+  and `GET /meal-logs` (lines → ingredient, and the rating; 4).
+- Single-item paths (`GET /recipes/{id}`, `POST /recipes`, confirm, feedback) still load lazily;
+  their cost is bounded by one recipe or meal.
+- A `count_queries` fixture (`tests/conftest.py`) counts executed SQL; each list endpoint has a
+  test asserting its count does not grow when more rows are added.
+
 ### Application workflows (`app/application/`)
 
 - `nutrition.py`: `get_nutrition_state(session, as_of)` loads goals and only that day's meals
@@ -314,7 +323,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-243 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+246 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
