@@ -1,8 +1,11 @@
+import re
+
 import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import func, select
+from sqlalchemy.engine import make_url
 
 from app.persistence.database import Base, get_engine, get_session_factory
 from app.persistence.models import Ingredient, MealLog, Recipe
@@ -43,11 +46,13 @@ def migrated_database_url(monkeypatch, empty_database_url):
 
 
 def test_reset_refuses_a_non_sqlite_database(monkeypatch):
-    """The destructive default will not run against a configured PostgreSQL database."""
+    """The destructive default refuses PostgreSQL, naming the database but not its credentials."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:secret@db.example/fridgefit")
 
-    with pytest.raises(SystemExit, match="non-SQLite"):
+    with pytest.raises(SystemExit, match="non-SQLite database fridgefit") as refusal:
         main([])
+
+    assert "secret" not in str(refusal.value)
 
 
 def test_reset_fills_the_configured_sqlite_database(monkeypatch, tmp_path):
@@ -88,7 +93,8 @@ def test_insert_only_refuses_a_database_that_has_data(migrated_database_url):
     main(["--insert-only"])
     meals_before = count(migrated_database_url, MealLog)
 
-    with pytest.raises(SystemExit, match="not empty"):
+    name = make_url(migrated_database_url).database
+    with pytest.raises(SystemExit, match=f"into {re.escape(name)}: database is not empty"):
         main(["--insert-only"])
 
     assert count(migrated_database_url, Ingredient) == len(INGREDIENTS)
@@ -101,6 +107,17 @@ def test_insert_only_refuses_an_unmigrated_database(monkeypatch, empty_database_
 
     with pytest.raises(SystemExit, match="alembic upgrade head"):
         main(["--insert-only"])
+
+
+def test_insert_only_refuses_an_empty_database_url(monkeypatch, tmp_path):
+    """DATABASE_URL set but empty is a mistake, not a request for the local SQLite file."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", "")
+
+    with pytest.raises(SystemExit, match="DATABASE_URL is set but empty"):
+        main(["--insert-only"])
+
+    assert not (tmp_path / "fridgefit.db").exists()
 
 
 def test_unknown_arguments_are_rejected_before_anything_runs(monkeypatch, tmp_path):

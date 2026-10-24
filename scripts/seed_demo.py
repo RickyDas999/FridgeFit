@@ -23,6 +23,7 @@ what is in the kitchen now.
 """
 
 import argparse
+import os
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
@@ -287,8 +288,11 @@ def reset_and_seed() -> None:
         SystemExit: If the configured database is not SQLite; nothing is touched.
     """
     database_url = get_database_url()
-    if make_url(database_url).get_backend_name() != "sqlite":
-        raise SystemExit("Refusing to reset a non-SQLite database; use --insert-only instead.")
+    url = make_url(database_url)
+    if url.get_backend_name() != "sqlite":
+        raise SystemExit(
+            f"Refusing to reset non-SQLite database {url.database}; use --insert-only instead."
+        )
     engine = get_engine(database_url)
     Base.metadata.drop_all(engine)
     # drop_all only knows the models' tables. Alembic's version table must go too, or the
@@ -308,10 +312,15 @@ def seed_empty_database() -> None:
     """Insert the demo dataset into a migrated, empty database, without changing anything else.
 
     Raises:
-        SystemExit: If the database is not at the latest migration or already holds any rows;
-            nothing is written.
+        SystemExit: If ``DATABASE_URL`` is set but empty, or the database is not at the latest
+            migration or already holds any rows; nothing is written.
     """
+    # An empty DATABASE_URL usually means a paste or variable went wrong; falling back to the
+    # local file would make the refusal below describe the wrong database.
+    if "DATABASE_URL" in os.environ and not os.environ["DATABASE_URL"].strip():
+        raise SystemExit("Refusing to insert: DATABASE_URL is set but empty.")
     database_url = get_database_url()
+    name = make_url(database_url).database
     engine = get_engine(database_url)
     head = ScriptDirectory.from_config(Config(ALEMBIC_INI)).get_current_head()
     with engine.connect() as connection:
@@ -319,7 +328,7 @@ def seed_empty_database() -> None:
     if current != head:
         engine.dispose()
         raise SystemExit(
-            f"Refusing to insert: database is at migration {current}, not {head}. "
+            f"Refusing to insert into {name}: database is at migration {current}, not {head}. "
             "Run `alembic upgrade head` first."
         )
 
@@ -332,7 +341,9 @@ def seed_empty_database() -> None:
         ]
         if occupied:
             engine.dispose()
-            raise SystemExit(f"Refusing to insert: database is not empty ({', '.join(occupied)}).")
+            raise SystemExit(
+                f"Refusing to insert into {name}: database is not empty ({', '.join(occupied)})."
+            )
         insert_demo_data(session, now)
     engine.dispose()
     print(summary(database_url, now.date()))

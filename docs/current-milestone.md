@@ -361,11 +361,14 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
   by `insert_demo_data(session, now)`, shared by two modes:
   - Default, `.venv/bin/python scripts/seed_demo.py`: local reset. Drops every table, including
     Alembic's version table, rebuilds them with `alembic upgrade head`, then inserts, so each run
-    gives the same known state. Refuses (exit with a message, nothing touched) when the database
+    gives the same known state. Refuses (exit with a message naming the database, nothing
+    touched) when the database
     is not SQLite.
   - `--insert-only`: for any database, including deployed PostgreSQL. Never drops or alters
     anything; inserts only when the database is at the latest migration and every table is
-    empty, and otherwise refuses with the reason (nothing written).
+    empty, and otherwise refuses with the reason and the database's name, never its
+    credentials (nothing written). A `DATABASE_URL` that is set but empty is refused rather
+    than treated as the local SQLite file.
 - Arguments are parsed with `argparse`, so an unknown or mistyped flag exits before either mode
   runs instead of falling through to the reset.
 - All dates are relative to when the data is inserted: 13 ingredients; 14 batches (chicken due
@@ -439,7 +442,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-264 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+265 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
