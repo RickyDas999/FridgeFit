@@ -56,7 +56,7 @@ the developer authorizes it; nothing below is implemented unless marked so.
 | 4 | Safe demo data: separate dataset insertion from the destructive local reset | Implemented |
 | 5 | Production backend configuration: env-driven CORS, port binding, Render build/start | Implemented |
 | 6 | Deploy backend + PostgreSQL and validate operations (developer-owned Render steps) | Implemented |
-| 7 | Production frontend configuration + deployment, full browser workflow | Not started |
+| 7 | Production frontend configuration + deployment, full browser workflow | In progress |
 | 8 | Deployment reliability + documentation closeout | Not started |
 
 The milestone is complete only when the deployed browser → API → PostgreSQL workflow, including
@@ -328,6 +328,12 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
   `/health`. Environment: `PYTHON_VERSION` 3.12, `TZ` `America/New_York`, `DATABASE_URL`
   linked from the database, `FRONTEND_ORIGIN` entered in the dashboard (`sync: false`; empty
   until Slice 7). Auto-deploy is set in the dashboard to "After CI Checks Pass".
+- `fridgefit` (Slice 7): static site from `frontend/`. Build `npm ci && npm run build` with
+  `NODE_VERSION` 22 (as in CI) and `VITE_API_BASE_URL=https://fridgefit-api.onrender.com`,
+  which Vite bakes into the bundle; publishes `frontend/dist` from Render's CDN. No rewrite
+  rules: the frontend is one page with no client-side routes. The build was rehearsed on a copy
+  of `frontend/`: it succeeded and the bundle holds the production API URL, not the local
+  default.
 - `fridgefit-db`: free PostgreSQL 16, database and user `fridgefit`.
 - Both in the `virginia` region (US East), so the API reaches the database over Render's private
   network. A database's region is fixed when it is created.
