@@ -1,8 +1,11 @@
 from datetime import date, datetime
 
 import pytest
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
-from app.persistence.models import MealLog
+from app.application import meals as meal_workflow
+from app.persistence.models import MealFeedback, MealLog, MealLogIngredient, Recipe
 
 KEY = "8f14e45f-ceea-4c1e-9a6b-2f1c3e5d7a90"
 
@@ -172,6 +175,59 @@ def test_failed_shortfall_does_not_use_up_the_key(client, stir_fry):
     assert accepted.status_code == 201
     assert accepted.json()["idempotency_key"] == KEY
     assert on_hand(client) == {"Chicken": 100}
+
+
+def test_losing_a_same_key_race_returns_the_winners_meal(app, client, stir_fry, monkeypatch):
+    """A request whose new key is committed by another request first replays that meal."""
+    real_confirm_meal = meal_workflow.confirm_meal
+    winner_ids = []
+
+    def winner_commits_first(session, recipe, **kwargs):
+        """Commit the same confirmation in another session, then run this request's own.
+
+        This forces the race deterministically: this request has already looked up its key
+        (nothing) and loaded the stock, both before the winner commits, so it plans against the
+        same stock and its own commit is the one the unique constraint rejects.
+        """
+        for line in recipe.recipe_ingredients:
+            line.ingredient.batches  # Load the stock the winner is about to use
+        with app.state.session_factory() as other_session:
+            other_recipe = other_session.get(Recipe, recipe.id)
+            winner_ids.append(real_confirm_meal(other_session, other_recipe, **kwargs).id)
+        return real_confirm_meal(session, recipe, **kwargs)
+
+    monkeypatch.setattr(meal_workflow, "confirm_meal", winner_commits_first)
+    loser = confirm(client, stir_fry, key=KEY)
+
+    assert loser.status_code == 200
+    assert loser.json()["id"] == winner_ids[0]
+    assert loser.json()["idempotency_key"] == KEY
+    # The response's ingredient lines load through the same session after its rollback.
+    assert [(i["name"], i["quantity"]) for i in loser.json()["ingredients"]] == [
+        ("Chicken", 100), ("Rice", 150),
+    ]
+    assert on_hand(client) == {"Chicken": 200, "Rice": 50}
+    with app.state.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(MealLog)) == 1
+        assert session.scalar(select(func.count()).select_from(MealLogIngredient)) == 2
+
+
+def test_unrelated_integrity_error_is_not_mistaken_for_a_replay(client, stir_fry, monkeypatch):
+    """A constraint violation other than a reused key still fails and leaves the key unused."""
+    real_confirm_meal = meal_workflow.confirm_meal
+
+    def confirm_with_an_orphan_rating(session, recipe, **kwargs):
+        """Add a rating for a meal that does not exist, so the commit fails on a foreign key."""
+        session.add(MealFeedback(meal_log_id=999, rating=3))
+        return real_confirm_meal(session, recipe, **kwargs)
+
+    monkeypatch.setattr(meal_workflow, "confirm_meal", confirm_with_an_orphan_rating)
+    with pytest.raises(IntegrityError, match="FOREIGN KEY"):
+        confirm(client, stir_fry, key=KEY)
+    monkeypatch.undo()
+
+    assert on_hand(client) == {"Chicken": 300, "Rice": 200}
+    assert confirm(client, stir_fry, key=KEY).status_code == 201
 
 
 def test_idempotency_key_in_the_body_is_not_part_of_the_contract(client, stir_fry):
