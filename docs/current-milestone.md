@@ -37,18 +37,17 @@ AI work are future directions, not started.
   `Idempotency-Key` could both miss the key lookup and both attempt confirmation; the unique
   constraint on `MealLog.idempotency_key` rejected the later commit, which surfaced as a 500. Now
   the losing request rolls back its failed transaction, looks the key up again, and returns the
-  winner's MealLog as an ordinary replay (200). Exactly one MealLog, one set of
+  winner's MealLog as an ordinary replay (200). A loser that instead loads stock after the winner
+  committed, and so fails on a shortfall, also looks the key up again before returning 409. Exactly one MealLog, one set of
   MealLogIngredient rows, and one inventory decrement exist for the key. Regression tests:
-  `test_losing_a_same_key_race_returns_the_winners_meal` and
+  `test_losing_a_same_key_race_returns_the_winners_meal`,
+  `test_shortfall_caused_by_a_same_key_winner_returns_the_winners_meal`, and
   `test_unrelated_integrity_error_is_not_mistaken_for_a_replay` in `tests/test_api_meals.py`.
 
 ## Known Follow-ups
 
 Deliberate shortcuts and cleanup, recorded so they are not lost:
 
-- A same-key request that loads inventory only after the winner has committed plans against the
-  depleted stock; without `allow_shortfall` it can return 409 instead of replaying the winner's
-  meal. Nothing is written twice; only the response differs.
 - New database constraints (e.g. unique recipe names) reach an existing `fridgefit.db` only if it
   is recreated, because startup's `create_all` never alters tables and Alembic is deferred.
 - The frontend has no automated tests; CI only type-checks and builds it. Behavior is verified
@@ -258,7 +257,9 @@ Implementation behavior worth knowing:
   `confirm_meal`, which writes the key in its own atomic commit. If that commit fails with an
   `IntegrityError` while a key was given, it rolls the session back and looks the key up again:
   found means another request committed it first, so that MealLog is returned as a replay
-  (`created=False`); not found means an unrelated violation, which is re-raised.
+  (`created=False`); not found means an unrelated violation, which is re-raised. A shortfall with
+  a key gets the same second lookup (no rollback needed: nothing was written), so a shortfall
+  caused by a same-key winner replays instead of returning 409.
 
 ### Demo seed (`scripts/seed_demo.py`)
 
@@ -337,7 +338,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-247 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+248 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
