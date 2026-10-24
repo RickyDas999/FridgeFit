@@ -64,11 +64,12 @@ PostgreSQL              (Render-managed)
   their own database URL to `create_app`.
 - SQLite-specific behavior (such as the foreign-key `PRAGMA`) applies only to SQLite
   connections. Models and domain code are never forked by database.
-- Alembic owns schema evolution of persistent databases. SQLAlchemy models describe the desired
-  schema; the migration history describes how a real database gets there. Every schema change
-  needs a migration, and every generated migration is reviewed, not accepted blindly.
-- Production startup never uses `Base.metadata.create_all()` in place of migrations; migrations
-  run as an explicit deployment step.
+- Alembic creates and evolves every real database's schema, local and production. SQLAlchemy
+  models describe the desired schema; the migration history describes how a database gets there.
+  Every schema change needs a migration, and every generated migration is reviewed, not accepted
+  blindly.
+- The API's startup never creates or alters tables. Migrations run as an explicit step
+  (`alembic upgrade head`) before the API starts; in production, as part of deployment.
 - The destructive demo reset (drop and recreate every table) is local developer tooling only and
   must not be able to target a production database. Production demo data is loaded deliberately
   and never on every deploy; a restart or redeploy preserves database state.
@@ -108,6 +109,7 @@ Neither is implemented. Neither may be implemented until explicitly requested.
 ## Code Layout
 
 ```text
+alembic/           database migrations (env.py, versions/); configured by alembic.ini
 app/
 ├── errors.py      InvalidInputError, shared by both layers
 ├── persistence/   database setup, enums, SQLAlchemy models
@@ -209,10 +211,14 @@ AGENTS.md          contract for the independent AI reviewer
   `before_flush` hook in `models.py`. The current one rejects a Recipe with no ingredients, which
   a constraint cannot check because the Recipe row must exist before its ingredient rows.
 - Recipe instructions are stored in a JSON column.
-- Until Alembic lands (Milestone 6 Slice 2), there are no migrations: the test fixture and the
-  API's startup (lifespan) create missing tables with `Base.metadata.create_all`, which never
-  alters existing tables. After it lands, schema changes follow the migration rules in
-  Environments and Deployment.
+- Migrations live in `alembic/` (configured by `alembic.ini`); `alembic/env.py` uses
+  `get_database_url()` and `Base.metadata`, and runs in batch mode on SQLite, which cannot alter
+  most of a table in place.
+- `Base.metadata` has a naming convention, so primary keys, foreign keys, unique constraints, and
+  indexes get predictable names (`uq_meal_logs_idempotency_key`) a migration can refer to. Check
+  constraints are named explicitly in the models.
+- Test fixtures build tables with `Base.metadata.create_all` for speed; a migration test proves
+  `alembic upgrade head` produces the same schema. Nothing else uses `create_all`.
 - Queries that load a list eager-load the relationships the code reads (`selectinload`), so a
   list endpoint runs a fixed number of queries however many rows exist; lazy loading one query
   per row (N+1) is not acceptable on list paths. Single-item paths, whose cost is bounded by

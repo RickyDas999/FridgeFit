@@ -27,7 +27,10 @@ def session():
 
 @pytest.fixture
 def app(tmp_path):
-    """Build an API app bound to a fresh SQLite file in a temporary directory.
+    """Build an API app bound to a fresh SQLite file in a temporary directory, with every table.
+
+    Tables come from the models directly (fast); ``tests/test_migrations.py`` proves the
+    migrations build the same schema.
 
     Args:
         tmp_path: pytest's per-test temporary directory.
@@ -35,12 +38,14 @@ def app(tmp_path):
     Returns:
         The FastAPI application.
     """
-    return create_app(f"sqlite:///{tmp_path / 'test.db'}")
+    app = create_app(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(app.state.engine)
+    return app
 
 
 @pytest.fixture
 def client(app):
-    """Provide an HTTP client for the app, with startup (table creation) already run.
+    """Provide an HTTP client for the app, with startup already run.
 
     Args:
         app: The FastAPI application under test.

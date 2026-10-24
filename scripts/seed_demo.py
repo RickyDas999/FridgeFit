@@ -8,9 +8,10 @@ SQLite file lives:
 It uses the same database as the API (``DATABASE_URL``, or the local SQLite file), but refuses
 any non-SQLite database, so it cannot wipe a deployed PostgreSQL database.
 
-Every table is dropped and recreated, so each run produces the same known state (and picks up
-the current schema). All dates are relative to when the script runs, so the demo never goes
-stale: something always expires today, a meal was eaten yesterday, and so on.
+Every table is dropped and rebuilt by the Alembic migrations, so each run produces the same
+known state with the current schema, and the database is left at the latest migration. All
+dates are relative to when the script runs, so the demo never goes stale: something always
+expires today, a meal was eaten yesterday, and so on.
 
 Historical meals are written directly with macros derived by the domain's own
 ``calculate_recipe_macros``. They do not consume current inventory: the batches below describe
@@ -18,7 +19,11 @@ what is in the kitchen now.
 """
 
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
 from app.domain.recipe_macros import calculate_recipe_macros
@@ -34,6 +39,9 @@ from app.persistence.models import (
     Recipe,
     RecipeIngredient,
 )
+
+# Absolute, so the seed finds the migrations however it is launched.
+ALEMBIC_INI = str(Path(__file__).resolve().parent.parent / "alembic.ini")
 
 GRAM, MILLILITER, COUNT = CanonicalUnit.GRAM, CanonicalUnit.MILLILITER, CanonicalUnit.COUNT
 PRIMARY, SUPPORTING, OPTIONAL = (
@@ -177,7 +185,7 @@ def historical_meal(recipe: Recipe, servings: float, consumed_at: datetime) -> M
 
 
 def seed() -> None:
-    """Drop and recreate every table, then insert the demo dataset relative to now.
+    """Drop every table, rebuild them with the migrations, then insert the demo dataset.
 
     Raises:
         SystemExit: If the configured database is not SQLite; nothing is touched.
@@ -187,7 +195,11 @@ def seed() -> None:
         raise SystemExit("Refusing to reset a non-SQLite database; seed_demo is local-only.")
     engine = get_engine(database_url)
     Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    # drop_all only knows the models' tables. Alembic's version table must go too, or the
+    # upgrade below would think the (now empty) database is already migrated.
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    command.upgrade(Config(ALEMBIC_INI), "head")
     now = datetime.now()
     today = now.date()
 
