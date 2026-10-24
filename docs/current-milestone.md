@@ -53,7 +53,7 @@ the developer authorizes it; nothing below is implemented unless marked so.
 | 1 | Environment-based database configuration (`DATABASE_URL`, SQLite fallback) | Implemented |
 | 2 | Alembic migration foundation: baseline migration, deliberate startup behavior | Implemented |
 | 3 | PostgreSQL driver and compatibility, verified in CI against real PostgreSQL | Implemented |
-| 4 | Safe demo data: separate dataset insertion from the destructive local reset | Not started |
+| 4 | Safe demo data: separate dataset insertion from the destructive local reset | Implemented |
 | 5 | Production backend configuration: env-driven CORS, port binding, Render build/start | Not started |
 | 6 | Deploy backend + PostgreSQL and validate operations (developer-owned Render steps) | Not started |
 | 7 | Production frontend configuration + deployment, full browser workflow | Not started |
@@ -68,8 +68,6 @@ Found while planning, for the slices named:
   other's decrement (lost update). Acceptable under the single-user assumption; revisit if that
   changes. (The same-key race tests pass on PostgreSQL.)
 - Slice 6: provision PostgreSQL 16 on Render, matching CI.
-- Slice 4: `scripts/seed_demo.py` already refuses non-SQLite databases (Slice 1); Slice 4 still
-  separates the demo dataset from the destructive reset.
 
 ## Known Follow-ups
 
@@ -79,6 +77,10 @@ Deliberate shortcuts and cleanup, recorded so they are not lost:
   fails on it ("table already exists"); re-running the seed rebuilds it at the latest migration.
 - The migration parity test (`compare_metadata`) catches added/removed columns, tables, and unique
   constraints, but not changed check-constraint expressions: Alembic does not compare those.
+- Demo data loaded once with `--insert-only` (the deployed database) ages: dates are relative to
+  the insert, so expiries pass and "today's" meal moves into the past. Refreshing it is a
+  deliberate manual step (empty the database, then `--insert-only` again); no code path wipes a
+  non-SQLite database.
 - Authentication is deferred: once deployed (Milestone 6), the demo is public and anyone with the
   URL can read and write its data.
 - The frontend has no automated tests; CI only type-checks and builds it. Behavior is verified
@@ -308,15 +310,21 @@ Implementation behavior worth knowing:
 
 ### Demo seed (`scripts/seed_demo.py`)
 
-- Developer tooling, run from the repository root: `.venv/bin/python scripts/seed_demo.py`.
-- Drops every table in the app's database (`get_database_url()`: `DATABASE_URL` or
-  `fridgefit.db`), including Alembic's version table, and rebuilds them with `alembic upgrade
-  head`, so each run gives the same known state at the latest migration; then inserts through
-  the ORM (not the HTTP API). Refuses to run (exit with a message, nothing
-  touched) when that database is not SQLite.
-- All dates are relative to the run: 13 ingredients; 14 batches (chicken due tomorrow and in 5
-  days, spinach due today plus an expired spinach batch, undated staples, no salmon, too few
-  black beans); 6 recipes (fully available, one missing a PRIMARY ingredient, one partly
+- Run from the repository root against the app's database (`get_database_url()`:
+  `DATABASE_URL` or `fridgefit.db`). The dataset is inserted through the ORM (not the HTTP API)
+  by `insert_demo_data(session, now)`, shared by two modes:
+  - Default, `.venv/bin/python scripts/seed_demo.py`: local reset. Drops every table, including
+    Alembic's version table, rebuilds them with `alembic upgrade head`, then inserts, so each run
+    gives the same known state. Refuses (exit with a message, nothing touched) when the database
+    is not SQLite.
+  - `--insert-only`: for any database, including deployed PostgreSQL. Never drops or alters
+    anything; inserts only when the database is at the latest migration and every table is
+    empty, and otherwise refuses with the reason (nothing written).
+- Arguments are parsed with `argparse`, so an unknown or mistyped flag exits before either mode
+  runs instead of falling through to the reset.
+- All dates are relative to when the data is inserted: 13 ingredients; 14 batches (chicken due
+  tomorrow and in 5 days, spinach due today plus an expired spinach batch, undated staples, no
+  salmon, too few black beans); 6 recipes (fully available, one missing a PRIMARY ingredient, one partly
   available); a goal effective 30 days ago; 7 past meals with macros from
   `calculate_recipe_macros` (the rice bowl twice in the last 7 days; today's breakfast
   unrated, the rest rated 2–5).
@@ -385,7 +393,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-258 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+262 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
