@@ -55,7 +55,7 @@ the developer authorizes it; nothing below is implemented unless marked so.
 | 3 | PostgreSQL driver and compatibility, verified in CI against real PostgreSQL | Implemented |
 | 4 | Safe demo data: separate dataset insertion from the destructive local reset | Implemented |
 | 5 | Production backend configuration: env-driven CORS, port binding, Render build/start | Implemented |
-| 6 | Deploy backend + PostgreSQL and validate operations (developer-owned Render steps) | Not started |
+| 6 | Deploy backend + PostgreSQL and validate operations (developer-owned Render steps) | Implemented |
 | 7 | Production frontend configuration + deployment, full browser workflow | Not started |
 | 8 | Deployment reliability + documentation closeout | Not started |
 
@@ -67,11 +67,6 @@ Found while planning, for the slices named:
 - Two confirmations with different keys can still both read the same stock and overwrite each
   other's decrement (lost update). Acceptable under the single-user assumption; revisit if that
   changes. (The same-key race tests pass on PostgreSQL.)
-- Slice 6: apply `render.yaml` as a Blueprint (it creates PostgreSQL 16, matching CI, and the
-  web service). Render's free database is deleted 30 days after creation (14-day grace to
-  upgrade) and has no backups; note the creation date. Rebuilding is: new database, deploy
-  (migrations run on start), `scripts/seed_demo.py --insert-only`. Confirm Render accepts
-  `PYTHON_VERSION: "3.12"` (a full patch version may be required).
 - Slice 6 → 7: until `FRONTEND_ORIGIN` is set, the deployed API falls back to the local Vite
   origins. Set it to the static site's exact origin once that URL exists.
 
@@ -95,6 +90,9 @@ Deliberate shortcuts and cleanup, recorded so they are not lost:
   user, narrower refreshes if it ever matters.
 - "Today" is the server's date (endpoints default `as_of` to it); a server in another timezone
   would shift the day boundary.
+- The deployed free PostgreSQL database (created 2026-10-24) expires on **2026-11-23** and is
+  deleted 14 days later; it has no backups. Before then: upgrade it, or let it lapse and rebuild
+  (new database, deploy, `scripts/seed_demo.py --insert-only`).
 
 ## Implemented
 
@@ -318,14 +316,15 @@ Implementation behavior worth knowing:
 
 ### Deployment configuration (`render.yaml`)
 
-Prepared, not yet applied (Slice 6 applies it). A Render Blueprint declaring:
+Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 - `fridgefit-api`: free Python web service. Build `pip install .` (runtime dependencies only).
   Start `alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT`: the free
   plan has no pre-deploy command, so migrations run before every start, a no-op when current. On
   a paid plan, `alembic upgrade head` would move to a pre-deploy command. Health check
   `/health`. Environment: `PYTHON_VERSION` 3.12, `DATABASE_URL` linked from the database,
-  `FRONTEND_ORIGIN` entered in the dashboard (`sync: false`).
+  `FRONTEND_ORIGIN` entered in the dashboard (`sync: false`; empty until Slice 7). Auto-deploy
+  is set in the dashboard to "After CI Checks Pass".
 - `fridgefit-db`: free PostgreSQL 16, database and user `fridgefit`.
 - Both in the `virginia` region (US East), so the API reaches the database over Render's private
   network. A database's region is fixed when it is created.
@@ -333,6 +332,24 @@ Prepared, not yet applied (Slice 6 applies it). A Render Blueprint declaring:
   commands, an empty PostgreSQL database and a plain `postgresql://` URL): the first start
   migrated, `/health` and CORS answered as configured, and a restart ran no migration and kept
   the data.
+
+### Deployment (Slice 6)
+
+- API: `https://fridgefit-api.onrender.com` (`fridgefit-api`, free, Virginia). Database:
+  `fridgefit-db`, free PostgreSQL 16, Virginia, created 2026-10-24 (see Known Follow-ups for
+  its expiry).
+- First deploy: the build succeeded with `PYTHON_VERSION` 3.12; the start command ran the
+  baseline migration on the empty database (`Running upgrade -> d22b106d0d3b`), Uvicorn bound
+  to Render's `$PORT`, and the health check passed.
+- Demo data loaded once from the developer's machine with the database's external URL:
+  `DATABASE_URL=... scripts/seed_demo.py --insert-only`.
+- Verified against the deployed API on 2026-10-24: `/health` 200; `/recommendations` ranked
+  recipes from PostgreSQL; `POST /recipes/1/confirm` with an `Idempotency-Key` → 201 (meal 8),
+  the same key again → 200 with the same meal, and inventory decreased once (chicken
+  1000 → 850, rice 2000 → 1850, broccoli 300 → 200); after a service restart the meal was still
+  listed and no migration ran; `POST /recipes/9999/confirm` → 404, visible in Render's logs.
+- Render probes `HEAD /` and `GET /`; both return 404 because the API has no root route, which
+  is expected.
 
 ### Demo seed (`scripts/seed_demo.py`)
 
