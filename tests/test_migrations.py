@@ -14,19 +14,18 @@ ALEMBIC_INI = str(Path(__file__).resolve().parent.parent / "alembic.ini")
 
 
 @pytest.fixture
-def database_url(monkeypatch, tmp_path):
-    """Point DATABASE_URL, which Alembic's env.py reads, at a fresh SQLite file.
+def database_url(monkeypatch, empty_database_url):
+    """Point DATABASE_URL, which Alembic's env.py reads, at an empty database.
 
     Args:
         monkeypatch: pytest's fixture for setting environment variables.
-        tmp_path: pytest's per-test temporary directory.
+        empty_database_url: An empty database for this test.
 
     Returns:
         The database URL.
     """
-    url = f"sqlite:///{tmp_path / 'migrated.db'}"
-    monkeypatch.setenv("DATABASE_URL", url)
-    return url
+    monkeypatch.setenv("DATABASE_URL", empty_database_url)
+    return empty_database_url
 
 
 def test_upgrade_head_builds_exactly_the_models_schema(database_url):
@@ -43,8 +42,11 @@ def test_upgrade_head_builds_exactly_the_models_schema(database_url):
     assert current == ScriptDirectory.from_config(Config(ALEMBIC_INI)).get_current_head()
 
 
-def test_downgrade_base_removes_every_table(database_url):
-    """Downgrading to base undoes the baseline, leaving only Alembic's version table."""
+def test_downgrade_base_removes_everything_the_baseline_created(database_url):
+    """Downgrading to base leaves only Alembic's version table, and upgrading again works.
+
+    Upgrading again would fail on PostgreSQL if the enum types had been left behind.
+    """
     config = Config(ALEMBIC_INI)
     command.upgrade(config, "head")
 
@@ -53,3 +55,4 @@ def test_downgrade_base_removes_every_table(database_url):
     engine = get_engine(database_url)
     assert inspect(engine).get_table_names() == ["alembic_version"]
     engine.dispose()
+    command.upgrade(config, "head")

@@ -52,7 +52,7 @@ the developer authorizes it; nothing below is implemented unless marked so.
 | 0 | Milestone activation and architecture documentation | Implemented |
 | 1 | Environment-based database configuration (`DATABASE_URL`, SQLite fallback) | Implemented |
 | 2 | Alembic migration foundation: baseline migration, deliberate startup behavior | Implemented |
-| 3 | PostgreSQL driver and compatibility, verified in CI against real PostgreSQL | Not started |
+| 3 | PostgreSQL driver and compatibility, verified in CI against real PostgreSQL | Implemented |
 | 4 | Safe demo data: separate dataset insertion from the destructive local reset | Not started |
 | 5 | Production backend configuration: env-driven CORS, port binding, Render build/start | Not started |
 | 6 | Deploy backend + PostgreSQL and validate operations (developer-owned Render steps) | Not started |
@@ -64,17 +64,10 @@ meal-confirmation writes and idempotent replay, has actually been exercised.
 
 Found while planning, for the slices named:
 
-- Slice 3: the baseline migration creates the PostgreSQL enum types `canonicalunit` and
-  `ingredientrole` (via `create_table`) and its downgrade drops them explicitly; this has only
-  run on SQLite so far, where enums are plain strings.
-- Slice 3: `DATABASE_URL` is passed to SQLAlchemy unchanged. SQLAlchemy 2.1 (installed) reads
-  `postgresql://` as the psycopg (v3) driver, 2.0 as psycopg2, and rejects `postgres://`; check
-  the URL format Render provides and pin the driver/URL convention. `app/api/main.py` still
-  builds `app = create_app()` at import, so the driver must be installed wherever that module is
-  imported with a PostgreSQL `DATABASE_URL`.
-- Slice 3: run the same-key race tests on PostgreSQL. Two confirmations with different keys can
-  still both read the same stock (lost update); acceptable under the single-user assumption, to
-  be revisited if that changes.
+- Two confirmations with different keys can still both read the same stock and overwrite each
+  other's decrement (lost update). Acceptable under the single-user assumption; revisit if that
+  changes. (The same-key race tests pass on PostgreSQL.)
+- Slice 6: provision PostgreSQL 16 on Render, matching CI.
 - Slice 4: `scripts/seed_demo.py` already refuses non-SQLite databases (Slice 1); Slice 4 still
   separates the demo dataset from the destructive reset.
 
@@ -103,8 +96,10 @@ Models: Ingredient, InventoryBatch, Recipe, RecipeIngredient, MealLog, MealLogIn
 NutritionGoal, MealFeedback.
 
 `database.py`: `get_database_url()` returns the `DATABASE_URL` environment variable, read when
-called, or `sqlite:///fridgefit.db` when it is unset or empty. The foreign-key `PRAGMA` hook runs
-only on SQLite connections. `Base.metadata` has a naming convention for primary keys, foreign
+called, or `sqlite:///fridgefit.db` when it is unset or empty. A PostgreSQL URL without a driver
+(`postgres://` or `postgresql://`, as hosts hand out) is rewritten to `postgresql+psycopg://`, so
+the driver is psycopg 3 whatever SQLAlchemy version is installed. The foreign-key `PRAGMA` hook
+runs only on SQLite connections. `Base.metadata` has a naming convention for primary keys, foreign
 keys, unique constraints, and indexes.
 
 Migrations (`alembic/`, `alembic.ini`): one revision, `d22b106d0d3b` (baseline schema: all eight
@@ -390,7 +385,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-257 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+258 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
@@ -400,14 +395,33 @@ with:
 .venv/bin/python -m pytest tests/ -v
 ```
 
+- Database tests get an empty database from the `empty_database_url` fixture (`conftest.py`): a
+  new SQLite file per test, or, when `TEST_DATABASE_URL` is set, that PostgreSQL database with
+  its `public` schema dropped and recreated before every test. The `session` and `app` fixtures
+  build tables with `create_all`; the migration tests run Alembic on the same database.
+- Against PostgreSQL (all 258 pass on PostgreSQL 15 locally and run on 16 in CI):
+
+  ```bash
+  TEST_DATABASE_URL=postgresql+psycopg://USER@localhost/fridgefit_test \
+    .venv/bin/python -m pytest tests/ -v
+  ```
+
+  The database must exist and is wiped by every test; never point it at real data.
+- Tests that check SQLite-specific or local-only behavior (seed, URL selection, startup) use
+  their own SQLite URLs either way.
+
 ### CI
 
 - `.github/workflows/ci.yml` runs `ruff check .` and `pytest` on Python 3.11 and 3.12 for every
   pull request and every push to `main`, plus a separate "Frontend build" job (Node 22) that
   runs `npm ci` and `npm run build` in `frontend/` from the committed lockfile.
+- A "Test on PostgreSQL 16" job runs the full pytest suite (Python 3.12) with `TEST_DATABASE_URL`
+  pointing at a throwaway `postgres:16` service container, so models, migrations, and API
+  behavior are exercised on real PostgreSQL. Its credentials exist only inside that container.
 - Ruff is pinned (`ruff==0.16.10`) and configured in `pyproject.toml`.
 - `main` is protected: changes merge only through a pull request with both CI checks passing; no
-  approval is required, and the admin can bypass in an emergency.
+  approval is required, and the admin can bypass in an emergency. The PostgreSQL job is not a
+  required check unless the developer adds it to branch protection.
 - `.github/workflows/ai-review.yml` runs an advisory semantic review when the developer adds the
   `ai-review` label to a pull request (or runs the workflow manually). It never runs on ordinary
   pushes.
