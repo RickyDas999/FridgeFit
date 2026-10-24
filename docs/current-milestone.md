@@ -29,27 +29,63 @@ Last updated: 2026-10-24
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**Active milestone: 5 — Production Reliability.** Approved checkpoints are implemented one at a
-time; do not start the next until the developer approves it. Deployment, PostgreSQL, Alembic, and
-AI work are future directions, not started.
+5. **Production Reliability**: one checkpoint, concurrent idempotency hardening. Previously, two
+   requests with the same new `Idempotency-Key` could both miss the key lookup and both attempt
+   confirmation; the unique constraint on `MealLog.idempotency_key` rejected the later commit,
+   which surfaced as a 500. Now the losing request rolls back its failed transaction, looks the
+   key up again, and returns the winner's MealLog as an ordinary replay (200). A loser that
+   instead loads stock after the winner committed, and so fails on a shortfall, also looks the
+   key up again before returning 409. Exactly one MealLog, one set of MealLogIngredient rows, and
+   one inventory decrement exist for the key. Regression tests:
+   `test_losing_a_same_key_race_returns_the_winners_meal`,
+   `test_shortfall_caused_by_a_same_key_winner_returns_the_winners_meal`, and
+   `test_unrelated_integrity_error_is_not_mistaken_for_a_replay` in `tests/test_api_meals.py`.
 
-- **Concurrent idempotency hardening** (implemented). Previously, two requests with the same new
-  `Idempotency-Key` could both miss the key lookup and both attempt confirmation; the unique
-  constraint on `MealLog.idempotency_key` rejected the later commit, which surfaced as a 500. Now
-  the losing request rolls back its failed transaction, looks the key up again, and returns the
-  winner's MealLog as an ordinary replay (200). A loser that instead loads stock after the winner
-  committed, and so fails on a shortfall, also looks the key up again before returning 409. Exactly one MealLog, one set of
-  MealLogIngredient rows, and one inventory decrement exist for the key. Regression tests:
-  `test_losing_a_same_key_race_returns_the_winners_meal`,
-  `test_shortfall_caused_by_a_same_key_winner_returns_the_winners_meal`, and
-  `test_unrelated_integrity_error_is_not_mistaken_for_a_replay` in `tests/test_api_meals.py`.
+**Active milestone: 6 — Deployment + Durable Persistence.** Moves FridgeFit from a local SQLite
+demo to a deployed system (Render Static Site → Render FastAPI web service → Render PostgreSQL)
+while keeping SQLite for local development. The target architecture is recorded in
+`docs/architecture.md` › Environments and Deployment. Slices land one at a time, each only after
+the developer authorizes it; nothing below is implemented unless marked so.
+
+| Slice | Scope | Status |
+|---|---|---|
+| 0 | Milestone activation and architecture documentation | Implemented |
+| 1 | Environment-based database configuration (`DATABASE_URL`, SQLite fallback) | Not started |
+| 2 | Alembic migration foundation: baseline migration, deliberate startup behavior | Not started |
+| 3 | PostgreSQL driver and compatibility, verified in CI against real PostgreSQL | Not started |
+| 4 | Safe demo data: separate dataset insertion from the destructive local reset | Not started |
+| 5 | Production backend configuration: env-driven CORS, port binding, Render build/start | Not started |
+| 6 | Deploy backend + PostgreSQL and validate operations (developer-owned Render steps) | Not started |
+| 7 | Production frontend configuration + deployment, full browser workflow | Not started |
+| 8 | Deployment reliability + documentation closeout | Not started |
+
+The milestone is complete only when the deployed browser → API → PostgreSQL workflow, including
+meal-confirmation writes and idempotent replay, has actually been exercised.
+
+Found while planning, for the slices named:
+
+- Slice 1: the SQLite foreign-key hook in `app/persistence/database.py` listens on every
+  `Engine`, so it would send `PRAGMA foreign_keys=ON` to PostgreSQL. `DATABASE_URL` is a
+  module-level constant and `app/api/main.py` builds `app = create_app()` at import.
+- Slice 1 or 3: SQLAlchemy reads `postgresql://` as the psycopg2 driver and rejects
+  `postgres://`; check the URL format Render provides before choosing a driver/URL convention.
+- Slice 1 → 4: once the default URL reads the environment, `scripts/seed_demo.py` (drop and
+  recreate everything) would act on whatever `DATABASE_URL` points to. Do not run it with
+  production credentials until Slice 4 lands.
+- Slice 2: startup `create_all` and the test fixtures depend on each other; the baseline
+  migration must create (and its downgrade drop) PostgreSQL enum types for `CanonicalUnit` and
+  `IngredientRole`.
+- Slice 3: run the same-key race tests on PostgreSQL. Two confirmations with different keys can
+  still both read the same stock (lost update); acceptable under the single-user assumption, to
+  be revisited if that changes.
 
 ## Known Follow-ups
 
 Deliberate shortcuts and cleanup, recorded so they are not lost:
 
 - New database constraints (e.g. unique recipe names) reach an existing `fridgefit.db` only if it
-  is recreated, because startup's `create_all` never alters tables and Alembic is deferred.
+  is recreated, because startup's `create_all` never alters tables (Alembic is Milestone 6
+  Slice 2).
 - The frontend has no automated tests; CI only type-checks and builds it. Behavior is verified
   by hand (README demo walkthrough).
 - Every write (logging or rating a meal) refetches all four dashboard sections; fine for one
@@ -391,6 +427,6 @@ with:
   `DEFAULT_WEIGHTS`)
 - Manual inventory correction
 - Recipe editing and deletion
-- Alembic migrations
-- Deployment and Docker (planned as a separate milestone after the frontend)
+- Alembic migrations, PostgreSQL support, and deployment (Milestone 6, in progress; see Status)
+- Docker (not planned unless deployment needs it)
 - Redis, queues, and microservices

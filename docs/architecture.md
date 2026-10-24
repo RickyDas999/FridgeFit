@@ -27,7 +27,9 @@ Concurrent writes are not currently a meaningful concern.
 
 - Python 3.11+
 - SQLAlchemy 2.x
-- SQLite as the V1 relational database
+- SQLite for local development and tests; PostgreSQL in production (see Environments and
+  Deployment)
+- Alembic for schema migrations of persistent databases
 - FastAPI for the V1 HTTP API
 - Pydantic for HTTP request and response schemas
 - React + TypeScript + Vite for the demo frontend (a Node.js toolchain confined to `frontend/`)
@@ -38,8 +40,47 @@ Concurrent writes are not currently a meaningful concern.
   `ai-review`: one review request, plus at most two bounded format-repair requests. AI review
   never blocks merging and never writes code; its findings are hypotheses for the developer.
 
-PostgreSQL is a possible future migration only if multi-user deployment or concurrency genuinely
-requires it.
+SQLite matched the original single-user, local workload and remains the local default.
+Deployment adds requirements SQLite on a hosted filesystem cannot meet: data must survive
+restarts and redeploys, and the schema must evolve without deleting data. That justifies
+PostgreSQL in production; it is not a rewrite of local development.
+
+## Environments and Deployment
+
+Approved target (Milestone 6):
+
+```text
+Browser
+  ↓ HTTPS
+React static frontend   (Render Static Site)
+  ↓ HTTPS
+FastAPI web service     (Render Python Web Service, Uvicorn)
+  ↓
+PostgreSQL              (Render-managed)
+```
+
+- Database selection is by environment: `DATABASE_URL` set → use it; absent → the local SQLite
+  file `sqlite:///fridgefit.db`. A fresh clone works with no configuration. Tests keep passing
+  their own database URL to `create_app`.
+- SQLite-specific behavior (such as the foreign-key `PRAGMA`) applies only to SQLite
+  connections. Models and domain code are never forked by database.
+- Alembic owns schema evolution of persistent databases. SQLAlchemy models describe the desired
+  schema; the migration history describes how a real database gets there. Every schema change
+  needs a migration, and every generated migration is reviewed, not accepted blindly.
+- Production startup never uses `Base.metadata.create_all()` in place of migrations; migrations
+  run as an explicit deployment step.
+- The destructive demo reset (drop and recreate every table) is local developer tooling only and
+  must not be able to target a production database. Production demo data is loaded deliberately
+  and never on every deploy; a restart or redeploy preserves database state.
+- Configuration lives in a few environment variables (e.g. `DATABASE_URL` and the deployed
+  frontend origin), read directly; no settings framework unless the settings outgrow that.
+  Secrets such as database credentials are never committed.
+- Provider-specific configuration stays at the deployment boundary. Application code depends on
+  `DATABASE_URL`, the frontend origin, and the port and start command, not on Render APIs.
+- No Docker unless native Render Python deployment cannot meet a concrete need.
+- Operations stay modest: `/health` checks API and database connectivity, and platform logs must
+  be enough to diagnose failed startups, migrations, and requests. No metrics, tracing, or APM
+  services without a concrete problem and developer approval.
 
 ## Infrastructure Not Used
 
@@ -137,9 +178,10 @@ AGENTS.md          contract for the independent AI reviewer
   item, form input such as servings, dialog state, and refetching API resources after a write.
 - Start with native `fetch` and plain React state, and simple CSS. Do not add Next.js, Redux,
   Zustand, TanStack/React Query, or a UI component framework.
-- FastAPI may enable CORS only as narrowly as the local Vite-to-FastAPI development setup
-  requires (the Vite dev origin). Broader CORS belongs to a deployment decision.
-- Deployment is out of scope until a separate milestone decides it.
+- CORS stays narrow: the local Vite dev origins, plus in production exactly the deployed
+  frontend origin, read from the environment. Never `*`.
+- In production the frontend is a static build (Render Static Site) whose API base URL is set at
+  build time (`VITE_API_BASE_URL`).
 
 ### Visual design
 
@@ -158,18 +200,19 @@ AGENTS.md          contract for the independent AI reviewer
 
 ## Persistence Conventions
 
-- SQLite foreign-key enforcement is enabled on every connection (`PRAGMA foreign_keys=ON` via a
-  SQLAlchemy connect-event hook). SQLite leaves foreign keys unenforced by default.
+- SQLite foreign-key enforcement is enabled on every SQLite connection (`PRAGMA
+  foreign_keys=ON` via a SQLAlchemy connect-event hook). SQLite leaves foreign keys unenforced by
+  default; PostgreSQL enforces them natively.
 - Clearly invalid values (negative quantities or macros, ratings outside 1–5, non-positive
   servings) are rejected by database `CheckConstraint`s.
 - Rules a database constraint cannot express are enforced before each save with a SQLAlchemy
   `before_flush` hook in `models.py`. The current one rejects a Recipe with no ingredients, which
   a constraint cannot check because the Recipe row must exist before its ingredient rows.
 - Recipe instructions are stored in a JSON column.
-- There are no migrations (Alembic is not set up). The test fixture and the API's startup
-  (lifespan) create missing tables with `Base.metadata.create_all`. This never alters existing
-  tables, so a schema change to an existing database needs the database recreated until
-  migrations exist.
+- Until Alembic lands (Milestone 6 Slice 2), there are no migrations: the test fixture and the
+  API's startup (lifespan) create missing tables with `Base.metadata.create_all`, which never
+  alters existing tables. After it lands, schema changes follow the migration rules in
+  Environments and Deployment.
 - Queries that load a list eager-load the relationships the code reads (`selectinload`), so a
   list endpoint runs a fixed number of queries however many rows exist; lazy loading one query
   per row (N+1) is not acceptable on list paths. Single-item paths, whose cost is bounded by
