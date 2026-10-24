@@ -71,12 +71,15 @@ PostgreSQL              (Render-managed)
   Every schema change needs a migration, and every generated migration is reviewed, not accepted
   blindly.
 - The API's startup never creates or alters tables. Migrations run as an explicit step
-  (`alembic upgrade head`) before the API starts; in production, as part of deployment.
+  (`alembic upgrade head`) before the API starts. On Render's free plan that step is the first
+  half of the start command (`alembic upgrade head && uvicorn ...`), so it also runs on restarts
+  (a no-op when current) and a failed migration keeps the API from starting; on a paid plan it
+  belongs in the pre-deploy command instead.
 - The destructive demo reset (drop and recreate every table) is local developer tooling only and
   must not be able to target a production database. Production demo data is loaded deliberately
   and never on every deploy; a restart or redeploy preserves database state.
-- Configuration lives in a few environment variables (e.g. `DATABASE_URL` and the deployed
-  frontend origin), read directly; no settings framework unless the settings outgrow that.
+- Configuration lives in a few environment variables (`DATABASE_URL`, `FRONTEND_ORIGIN`, and the
+  platform's `PORT`), read directly; no settings framework unless the settings outgrow that.
   Secrets such as database credentials are never committed.
 - Provider-specific configuration stays at the deployment boundary. Application code depends on
   `DATABASE_URL`, the frontend origin, and the port and start command, not on Render APIs.
@@ -112,6 +115,7 @@ Neither is implemented. Neither may be implemented until explicitly requested.
 
 ```text
 alembic/           database migrations (env.py, versions/); configured by alembic.ini
+render.yaml        Render Blueprint: the deployed web service and PostgreSQL database
 app/
 ├── errors.py      InvalidInputError, shared by both layers
 ├── persistence/   database setup, enums, SQLAlchemy models
