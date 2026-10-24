@@ -1,30 +1,38 @@
-"""Reset the local FridgeFit database and fill it with a reproducible demo dataset.
+"""Fill a FridgeFit database with a reproducible demo dataset.
 
-Developer tooling, not application code. Run from the repository root, where the app's default
-SQLite file lives:
+Developer and deployment tooling, not application code. Run from the repository root. It uses
+the same database as the API (``DATABASE_URL``, or the local SQLite file). Two modes:
 
-    .venv/bin/python scripts/seed_demo.py
+    .venv/bin/python scripts/seed_demo.py                # reset, local SQLite only
+    .venv/bin/python scripts/seed_demo.py --insert-only  # add to an empty database, any kind
 
-It uses the same database as the API (``DATABASE_URL``, or the local SQLite file), but refuses
-any non-SQLite database, so it cannot wipe a deployed PostgreSQL database.
+The default resets: every table is dropped and rebuilt by the Alembic migrations, so each run
+produces the same known state. It refuses any non-SQLite database, so it cannot wipe a deployed
+PostgreSQL database.
 
-Every table is dropped and rebuilt by the Alembic migrations, so each run produces the same
-known state with the current schema, and the database is left at the latest migration. All
-dates are relative to when the script runs, so the demo never goes stale: something always
-expires today, a meal was eaten yesterday, and so on.
+``--insert-only`` never drops or changes anything: it adds the dataset only to a database that
+is already at the latest migration and holds no rows at all, and refuses otherwise. This is how
+a deployed database gets its demo data, once.
+
+All dates are relative to when the data is inserted: something expires today, a meal was eaten
+yesterday, and so on. A reset keeps the local demo current; inserted-once data ages.
 
 Historical meals are written directly with macros derived by the domain's own
 ``calculate_recipe_macros``. They do not consume current inventory: the batches below describe
 what is in the kitchen now.
 """
 
+import argparse
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import text
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
 
 from app.domain.recipe_macros import calculate_recipe_macros
 from app.persistence.database import Base, get_database_url, get_engine, get_session_factory
@@ -184,7 +192,95 @@ def historical_meal(recipe: Recipe, servings: float, consumed_at: datetime) -> M
     )
 
 
-def seed() -> None:
+def insert_demo_data(session: Session, now: datetime) -> None:
+    """Add the demo dataset, dated relative to ``now``, and commit it.
+
+    Args:
+        session: A session on a migrated database whose tables are empty.
+        now: The moment the demo treats as the present.
+    """
+    today = now.date()
+    ingredients = {
+        name: Ingredient(
+            name=name,
+            canonical_unit=unit,
+            nutrition_base_quantity=base,
+            calories_per_base_unit=calories,
+            protein_per_base_unit=protein,
+            carbs_per_base_unit=carbs,
+            fat_per_base_unit=fat,
+            nutrition_updated_at=now,
+        )
+        for name, (unit, base, calories, protein, carbs, fat) in INGREDIENTS.items()
+    }
+    session.add_all(ingredients.values())
+
+    session.add_all(
+        InventoryBatch(
+            ingredient=ingredients[name],
+            quantity_initial=quantity,
+            quantity_remaining=quantity,
+            purchased_at=at(today - timedelta(days=bought_days_ago), 10),
+            use_by_date=None if use_by is None else today + timedelta(days=use_by),
+        )
+        for name, quantity, use_by, bought_days_ago in BATCHES
+    )
+
+    recipes = {
+        name: Recipe(
+            name=name,
+            servings=servings,
+            prep_minutes=prep,
+            instructions=steps,
+            recipe_ingredients=[
+                RecipeIngredient(ingredient=ingredients[i], quantity=q, role=role)
+                for i, q, role in lines
+            ],
+        )
+        for name, (servings, prep, steps, lines) in RECIPES.items()
+    }
+    session.add_all(recipes.values())
+
+    session.add(NutritionGoal(
+        calories=GOAL["calories"],
+        protein=GOAL["protein"],
+        carbs=GOAL["carbs"],
+        fat=GOAL["fat"],
+        effective_date=today - timedelta(days=GOAL["days_ago"]),
+    ))
+    # Flush so RecipeIngredient ids exist for the macro quantity overrides below.
+    session.flush()
+
+    for recipe_name, days_ago, hour, servings, rating in MEALS:
+        meal = historical_meal(
+            recipes[recipe_name], servings, at(today - timedelta(days=days_ago), hour)
+        )
+        session.add(meal)
+        if rating is not None:
+            session.add(MealFeedback(meal_log=meal, rating=rating))
+
+    session.commit()
+
+
+def summary(database_url: str, today: date) -> str:
+    """Describe what was seeded, naming the database but never its credentials.
+
+    Args:
+        database_url: The database that was seeded.
+        today: The day the demo dates are relative to.
+
+    Returns:
+        A one-line summary.
+    """
+    rated = sum(1 for *_, rating in MEALS if rating is not None)
+    return (
+        f"Seeded {make_url(database_url).database} for {today}: {len(INGREDIENTS)} ingredients, "
+        f"{len(BATCHES)} batches, {len(RECIPES)} recipes, 1 nutrition goal, {len(MEALS)} past "
+        f"meals ({rated} rated)."
+    )
+
+
+def reset_and_seed() -> None:
     """Drop every table, rebuild them with the migrations, then insert the demo dataset.
 
     Raises:
@@ -192,7 +288,7 @@ def seed() -> None:
     """
     database_url = get_database_url()
     if make_url(database_url).get_backend_name() != "sqlite":
-        raise SystemExit("Refusing to reset a non-SQLite database; seed_demo is local-only.")
+        raise SystemExit("Refusing to reset a non-SQLite database; use --insert-only instead.")
     engine = get_engine(database_url)
     Base.metadata.drop_all(engine)
     # drop_all only knows the models' tables. Alembic's version table must go too, or the
@@ -200,78 +296,69 @@ def seed() -> None:
     with engine.begin() as connection:
         connection.execute(text("DROP TABLE IF EXISTS alembic_version"))
     command.upgrade(Config(ALEMBIC_INI), "head")
+
     now = datetime.now()
-    today = now.date()
-
     with get_session_factory(engine)() as session:
-        ingredients = {
-            name: Ingredient(
-                name=name,
-                canonical_unit=unit,
-                nutrition_base_quantity=base,
-                calories_per_base_unit=calories,
-                protein_per_base_unit=protein,
-                carbs_per_base_unit=carbs,
-                fat_per_base_unit=fat,
-                nutrition_updated_at=now,
-            )
-            for name, (unit, base, calories, protein, carbs, fat) in INGREDIENTS.items()
-        }
-        session.add_all(ingredients.values())
+        insert_demo_data(session, now)
+    engine.dispose()
+    print(summary(database_url, now.date()))
 
-        session.add_all(
-            InventoryBatch(
-                ingredient=ingredients[name],
-                quantity_initial=quantity,
-                quantity_remaining=quantity,
-                purchased_at=at(today - timedelta(days=bought_days_ago), 10),
-                use_by_date=None if use_by is None else today + timedelta(days=use_by),
-            )
-            for name, quantity, use_by, bought_days_ago in BATCHES
+
+def seed_empty_database() -> None:
+    """Insert the demo dataset into a migrated, empty database, without changing anything else.
+
+    Raises:
+        SystemExit: If the database is not at the latest migration or already holds any rows;
+            nothing is written.
+    """
+    database_url = get_database_url()
+    engine = get_engine(database_url)
+    head = ScriptDirectory.from_config(Config(ALEMBIC_INI)).get_current_head()
+    with engine.connect() as connection:
+        current = MigrationContext.configure(connection).get_current_revision()
+    if current != head:
+        engine.dispose()
+        raise SystemExit(
+            f"Refusing to insert: database is at migration {current}, not {head}. "
+            "Run `alembic upgrade head` first."
         )
 
-        recipes = {
-            name: Recipe(
-                name=name,
-                servings=servings,
-                prep_minutes=prep,
-                instructions=steps,
-                recipe_ingredients=[
-                    RecipeIngredient(ingredient=ingredients[i], quantity=q, role=role)
-                    for i, q, role in lines
-                ],
-            )
-            for name, (servings, prep, steps, lines) in RECIPES.items()
-        }
-        session.add_all(recipes.values())
+    now = datetime.now()
+    with get_session_factory(engine)() as session:
+        occupied = [
+            table.name
+            for table in Base.metadata.sorted_tables
+            if session.scalar(select(func.count()).select_from(table))
+        ]
+        if occupied:
+            engine.dispose()
+            raise SystemExit(f"Refusing to insert: database is not empty ({', '.join(occupied)}).")
+        insert_demo_data(session, now)
+    engine.dispose()
+    print(summary(database_url, now.date()))
 
-        session.add(NutritionGoal(
-            calories=GOAL["calories"],
-            protein=GOAL["protein"],
-            carbs=GOAL["carbs"],
-            fat=GOAL["fat"],
-            effective_date=today - timedelta(days=GOAL["days_ago"]),
-        ))
-        # Flush so RecipeIngredient ids exist for the macro quantity overrides below.
-        session.flush()
 
-        for recipe_name, days_ago, hour, servings, rating in MEALS:
-            meal = historical_meal(
-                recipes[recipe_name], servings, at(today - timedelta(days=days_ago), hour)
-            )
-            session.add(meal)
-            if rating is not None:
-                session.add(MealFeedback(meal_log=meal, rating=rating))
+def main(argv: list[str] | None = None) -> None:
+    """Run the reset (default) or ``--insert-only``, as chosen on the command line.
 
-        session.commit()
+    Args:
+        argv: Command-line arguments; defaults to ``sys.argv[1:]``.
 
-    path = make_url(database_url).database
-    rated = sum(1 for *_, rating in MEALS if rating is not None)
-    print(
-        f"Seeded {path} for {today}: {len(INGREDIENTS)} ingredients, {len(BATCHES)} batches, "
-        f"{len(RECIPES)} recipes, 1 nutrition goal, {len(MEALS)} past meals ({rated} rated)."
+    Raises:
+        SystemExit: On an unknown argument (before anything runs), or when the chosen mode
+            refuses the database.
+    """
+    parser = argparse.ArgumentParser(description="Fill a FridgeFit database with demo data.")
+    parser.add_argument(
+        "--insert-only",
+        action="store_true",
+        help="add the dataset to a migrated, empty database (any kind) without resetting it",
     )
+    if parser.parse_args(argv).insert_only:
+        seed_empty_database()
+    else:
+        reset_and_seed()
 
 
 if __name__ == "__main__":
-    seed()
+    main()

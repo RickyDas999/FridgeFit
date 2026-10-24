@@ -58,6 +58,14 @@ or to apply a new migration to an existing one, run:
 A `fridgefit.db` created before migrations existed has tables but no migration version, so
 `alembic upgrade head` fails on it; re-run the seed script to rebuild it.
 
+The reset only works on SQLite. To add the demo data to any other database without resetting it,
+use `--insert-only`, which writes only to a database that is fully migrated and completely
+empty:
+
+```bash
+.venv/bin/python scripts/seed_demo.py --insert-only
+```
+
 Start the API:
 
 ```bash
