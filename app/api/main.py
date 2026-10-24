@@ -10,7 +10,7 @@ from sqlalchemy import text
 from app.api import ingredients, inventory, meals, nutrition, recipes, recommendations
 from app.api.session import SessionDep
 from app.errors import InvalidInputError
-from app.persistence.database import DATABASE_URL, Base, get_engine, get_session_factory
+from app.persistence.database import Base, get_database_url, get_engine, get_session_factory
 
 # The Vite dev server's origins. Local development only; deployment will decide its own origins.
 LOCAL_FRONTEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -81,15 +81,18 @@ def health(session: SessionDep) -> dict[str, str]:
     return {"status": "ok"}
 
 
-def create_app(database_url: str = DATABASE_URL) -> FastAPI:
+def create_app(database_url: str | None = None) -> FastAPI:
     """Build the FridgeFit API application bound to one database.
 
     Args:
-        database_url: SQLAlchemy connection string. Tests pass a temporary database.
+        database_url: SQLAlchemy connection string. Tests pass a temporary database; when
+            omitted, ``get_database_url`` picks it from the environment.
 
     Returns:
         The configured FastAPI application.
     """
+    if database_url is None:
+        database_url = get_database_url()
     app = FastAPI(title="FridgeFit", lifespan=lifespan)
     app.state.engine = get_engine(database_url)
     app.state.session_factory = get_session_factory(app.state.engine)

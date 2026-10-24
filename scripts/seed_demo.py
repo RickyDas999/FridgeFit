@@ -5,6 +5,9 @@ SQLite file lives:
 
     .venv/bin/python scripts/seed_demo.py
 
+It uses the same database as the API (``DATABASE_URL``, or the local SQLite file), but refuses
+any non-SQLite database, so it cannot wipe a deployed PostgreSQL database.
+
 Every table is dropped and recreated, so each run produces the same known state (and picks up
 the current schema). All dates are relative to when the script runs, so the demo never goes
 stale: something always expires today, a meal was eaten yesterday, and so on.
@@ -19,7 +22,7 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy.engine import make_url
 
 from app.domain.recipe_macros import calculate_recipe_macros
-from app.persistence.database import DATABASE_URL, Base, get_engine, get_session_factory
+from app.persistence.database import Base, get_database_url, get_engine, get_session_factory
 from app.persistence.enums import CanonicalUnit, IngredientRole
 from app.persistence.models import (
     Ingredient,
@@ -174,8 +177,15 @@ def historical_meal(recipe: Recipe, servings: float, consumed_at: datetime) -> M
 
 
 def seed() -> None:
-    """Drop and recreate every table, then insert the demo dataset relative to now."""
-    engine = get_engine(DATABASE_URL)
+    """Drop and recreate every table, then insert the demo dataset relative to now.
+
+    Raises:
+        SystemExit: If the configured database is not SQLite; nothing is touched.
+    """
+    database_url = get_database_url()
+    if make_url(database_url).get_backend_name() != "sqlite":
+        raise SystemExit("Refusing to reset a non-SQLite database; seed_demo is local-only.")
+    engine = get_engine(database_url)
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     now = datetime.now()
@@ -243,7 +253,7 @@ def seed() -> None:
 
         session.commit()
 
-    path = make_url(DATABASE_URL).database
+    path = make_url(database_url).database
     rated = sum(1 for *_, rating in MEALS if rating is not None)
     print(
         f"Seeded {path} for {today}: {len(INGREDIENTS)} ingredients, {len(BATCHES)} batches, "

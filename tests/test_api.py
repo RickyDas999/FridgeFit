@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
+from app.api.main import create_app
 from app.errors import InvalidInputError
 from app.persistence.database import Base
 
@@ -12,6 +13,16 @@ def test_health_reports_ok(app):
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_app_uses_database_url_from_the_environment(monkeypatch, tmp_path):
+    """Without an explicit URL, create_app connects to the DATABASE_URL environment variable."""
+    database_url = f"sqlite:///{tmp_path / 'from-env.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    app = create_app()
+
+    assert app.state.engine.url.render_as_string() == database_url
 
 
 def test_startup_creates_every_table(app):
