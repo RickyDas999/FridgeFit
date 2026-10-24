@@ -10,7 +10,7 @@ from sqlalchemy import text
 from app.api import ingredients, inventory, meals, nutrition, recipes, recommendations
 from app.api.session import SessionDep
 from app.errors import InvalidInputError
-from app.persistence.database import Base, get_database_url, get_engine, get_session_factory
+from app.persistence.database import get_database_url, get_engine, get_session_factory
 
 # The Vite dev server's origins. Local development only; deployment will decide its own origins.
 LOCAL_FRONTEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -18,10 +18,10 @@ LOCAL_FRONTEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create any missing tables at startup and release database connections at shutdown.
+    """Release database connections when the application shuts down.
 
-    This bootstraps a fresh SQLite database for V1. It only creates missing tables and never
-    alters existing ones, so it is not a substitute for migrations (Alembic is deferred).
+    Startup does not create or change tables: the schema comes from Alembic migrations
+    (``alembic upgrade head``), run as a separate step before the API starts.
 
     Args:
         app: The application being started.
@@ -29,7 +29,6 @@ async def lifespan(app: FastAPI):
     Yields:
         Control back to FastAPI while the application serves requests.
     """
-    Base.metadata.create_all(app.state.engine)
     yield
     app.state.engine.dispose()
 

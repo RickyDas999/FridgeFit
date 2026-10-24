@@ -1,15 +1,27 @@
 import os
 import sqlite3
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import MetaData, create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 LOCAL_DATABASE_URL = "sqlite:///fridgefit.db"
 
+# Predictable names for constraints the models leave unnamed, so a migration can later find and
+# alter them (SQLite has no other way to refer to them). Check constraints are already named
+# explicitly in the models, so they get no pattern.
+NAMING_CONVENTION = {
+    "pk": "pk_%(table_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ix": "ix_%(table_name)s_%(column_0_name)s",
+}
+
 
 class Base(DeclarativeBase):
     """Declarative base class that all FridgeFit ORM models inherit from."""
+
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
 @event.listens_for(Engine, "connect")

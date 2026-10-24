@@ -3,6 +3,7 @@ name = "fridgefit"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.20",
     "fastapi>=0.115",
     "pydantic>=2.0",
     "sqlalchemy>=2.0",
@@ -29,6 +30,10 @@ target-version = "py311"
 select = ["E", "W", "F", "I", "D"]
 # Docstrings are required on functions and classes, not on modules or packages.
 ignore = ["D100", "D104"]
+
+[tool.ruff.lint.isort]
+# The installed Alembic package, not the repository's alembic/ migrations folder.
+known-third-party = ["alembic"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

@@ -3,7 +3,6 @@ from sqlalchemy import inspect
 
 from app.api.main import create_app
 from app.errors import InvalidInputError
-from app.persistence.database import Base
 
 
 def test_health_reports_ok(app):
@@ -25,12 +24,14 @@ def test_app_uses_database_url_from_the_environment(monkeypatch, tmp_path):
     assert app.state.engine.url.render_as_string() == database_url
 
 
-def test_startup_creates_every_table(app):
-    """Starting the app creates the full schema in a fresh database."""
-    with TestClient(app):
-        tables = set(inspect(app.state.engine).get_table_names())
+def test_startup_does_not_create_tables(tmp_path):
+    """Starting the app leaves an empty database empty: the schema comes from migrations."""
+    app = create_app(f"sqlite:///{tmp_path / 'empty.db'}")
 
-    assert tables == set(Base.metadata.tables)
+    with TestClient(app):
+        tables = inspect(app.state.engine).get_table_names()
+
+    assert tables == []
 
 
 def test_invalid_input_error_becomes_422(app):

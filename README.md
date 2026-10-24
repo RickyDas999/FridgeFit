@@ -26,7 +26,7 @@ Implemented:
 - **Demo frontend**: a dashboard that shows ranked recommendations and why they rank, logs meals,
   handles inventory shortfalls, and rates meals, all through the API.
 
-Not built yet: authentication, nutrition-data and Claude integrations, and migrations. See
+Not built yet: authentication, nutrition-data and Claude integrations, and deployment. See
 [`docs/current-milestone.md`](docs/current-milestone.md) for exactly what is implemented and what
 comes next.
 
@@ -41,11 +41,22 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 ```
 
-Load the demo dataset (this **resets** `fridgefit.db`; dates are relative to today):
+Load the demo dataset. This **resets** `fridgefit.db`, builds its tables by running the Alembic
+migrations, and fills it with data dated relative to today:
 
 ```bash
 .venv/bin/python scripts/seed_demo.py
 ```
+
+The API never creates tables itself. To start from an empty database instead of the demo data,
+or to apply a new migration to an existing one, run:
+
+```bash
+.venv/bin/alembic upgrade head
+```
+
+A `fridgefit.db` created before migrations existed has tables but no migration version, so
+`alembic upgrade head` fails on it; re-run the seed script to rebuild it.
 
 Start the API:
 
@@ -125,6 +136,7 @@ Dates are `YYYY-MM-DD` and default to today; datetimes are local time without a 
 ## Project Layout
 
 ```text
+alembic/            database migrations (alembic.ini configures them)
 app/
 ├── errors.py       shared InvalidInputError
 ├── persistence/    database setup, enums, SQLAlchemy models
