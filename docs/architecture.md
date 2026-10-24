@@ -78,9 +78,10 @@ PostgreSQL              (Render-managed)
 - The destructive demo reset (drop and recreate every table) is local developer tooling only and
   must not be able to target a production database. Production demo data is loaded deliberately
   and never on every deploy; a restart or redeploy preserves database state.
-- Configuration lives in a few environment variables (`DATABASE_URL`, `FRONTEND_ORIGIN`, and the
-  platform's `PORT`), read directly; no settings framework unless the settings outgrow that.
-  Secrets such as database credentials are never committed.
+- Configuration lives in a few environment variables (`DATABASE_URL`, `FRONTEND_ORIGIN`, `TZ`
+  for the single user's timezone, and the platform's `PORT`), read directly; no settings
+  framework unless the settings outgrow that. Secrets such as database credentials are never
+  committed.
 - Provider-specific configuration stays at the deployment boundary. Application code depends on
   `DATABASE_URL`, the frontend origin, and the port and start command, not on Render APIs.
 - No Docker unless native Render Python deployment cannot meet a concrete need.
