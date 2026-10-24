@@ -1,8 +1,11 @@
+import os
+import sqlite3
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DATABASE_URL = "sqlite:///fridgefit.db"
+LOCAL_DATABASE_URL = "sqlite:///fridgefit.db"
 
 
 class Base(DeclarativeBase):
@@ -15,24 +18,38 @@ def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
 
     SQLite leaves FOREIGN KEY constraints unenforced per-connection by
     default, so without this hook every ForeignKey in the schema would be
-    documentation only, silently allowing orphaned rows.
+    documentation only, silently allowing orphaned rows. The listener fires for every engine,
+    so connections to other databases (which enforce foreign keys themselves) are skipped.
 
     Args:
         dbapi_connection: The raw DBAPI connection SQLAlchemy just opened.
         _connection_record: SQLAlchemy's pool bookkeeping object for the
             connection; unused here but required by the event signature.
     """
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
 
-def get_engine(database_url: str = DATABASE_URL):
+def get_database_url() -> str:
+    """Return the database URL for this environment.
+
+    Read when called, not at import, so the environment in effect at startup decides.
+
+    Returns:
+        The ``DATABASE_URL`` environment variable, or the local SQLite file when it is unset or
+        empty.
+    """
+    return os.environ.get("DATABASE_URL") or LOCAL_DATABASE_URL
+
+
+def get_engine(database_url: str):
     """Create a new SQLAlchemy engine bound to the given database URL.
 
     Args:
-        database_url: SQLAlchemy connection string. Defaults to the
-            project's SQLite file.
+        database_url: SQLAlchemy connection string.
 
     Returns:
         A configured SQLAlchemy Engine instance.

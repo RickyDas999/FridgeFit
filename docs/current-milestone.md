@@ -50,7 +50,7 @@ the developer authorizes it; nothing below is implemented unless marked so.
 | Slice | Scope | Status |
 |---|---|---|
 | 0 | Milestone activation and architecture documentation | Implemented |
-| 1 | Environment-based database configuration (`DATABASE_URL`, SQLite fallback) | Not started |
+| 1 | Environment-based database configuration (`DATABASE_URL`, SQLite fallback) | Implemented |
 | 2 | Alembic migration foundation: baseline migration, deliberate startup behavior | Not started |
 | 3 | PostgreSQL driver and compatibility, verified in CI against real PostgreSQL | Not started |
 | 4 | Safe demo data: separate dataset insertion from the destructive local reset | Not started |
@@ -64,20 +64,19 @@ meal-confirmation writes and idempotent replay, has actually been exercised.
 
 Found while planning, for the slices named:
 
-- Slice 1: the SQLite foreign-key hook in `app/persistence/database.py` listens on every
-  `Engine`, so it would send `PRAGMA foreign_keys=ON` to PostgreSQL. `DATABASE_URL` is a
-  module-level constant and `app/api/main.py` builds `app = create_app()` at import.
-- Slice 1 or 3: SQLAlchemy reads `postgresql://` as the psycopg2 driver and rejects
-  `postgres://`; check the URL format Render provides before choosing a driver/URL convention.
-- Slice 1 → 4: once the default URL reads the environment, `scripts/seed_demo.py` (drop and
-  recreate everything) would act on whatever `DATABASE_URL` points to. Do not run it with
-  production credentials until Slice 4 lands.
 - Slice 2: startup `create_all` and the test fixtures depend on each other; the baseline
   migration must create (and its downgrade drop) PostgreSQL enum types for `CanonicalUnit` and
   `IngredientRole`.
+- Slice 3: `DATABASE_URL` is passed to SQLAlchemy unchanged. SQLAlchemy 2.1 (installed) reads
+  `postgresql://` as the psycopg (v3) driver, 2.0 as psycopg2, and rejects `postgres://`; check
+  the URL format Render provides and pin the driver/URL convention. `app/api/main.py` still
+  builds `app = create_app()` at import, so the driver must be installed wherever that module is
+  imported with a PostgreSQL `DATABASE_URL`.
 - Slice 3: run the same-key race tests on PostgreSQL. Two confirmations with different keys can
   still both read the same stock (lost update); acceptable under the single-user assumption, to
   be revisited if that changes.
+- Slice 4: `scripts/seed_demo.py` already refuses non-SQLite databases (Slice 1); Slice 4 still
+  separates the demo dataset from the destructive reset.
 
 ## Known Follow-ups
 
@@ -101,6 +100,10 @@ Deliberate shortcuts and cleanup, recorded so they are not lost:
 
 Models: Ingredient, InventoryBatch, Recipe, RecipeIngredient, MealLog, MealLogIngredient,
 NutritionGoal, MealFeedback.
+
+`database.py`: `get_database_url()` returns the `DATABASE_URL` environment variable, read when
+called, or `sqlite:///fridgefit.db` when it is unset or empty. The foreign-key `PRAGMA` hook runs
+only on SQLite connections.
 
 Schema details beyond the core domain rules:
 
@@ -203,8 +206,9 @@ Implementation behavior worth knowing:
 
 ### HTTP API (`app/api/`)
 
-- `app/api/main.py`: `create_app(database_url)` builds the app; the module-level `app` uses the
-  default SQLite file. Run locally with `.venv/bin/uvicorn app.api.main:app --reload`.
+- `app/api/main.py`: `create_app(database_url=None)` builds the app; without a URL it uses
+  `get_database_url()`, so the module-level `app` uses `DATABASE_URL` or the local SQLite file.
+  Run locally with `.venv/bin/uvicorn app.api.main:app --reload`.
 - Startup (lifespan) creates missing tables; shutdown disposes the engine.
 - CORS (`CORSMiddleware`) allows only the local Vite origins in `LOCAL_FRONTEND_ORIGINS`
   (`http://localhost:5173`, `http://127.0.0.1:5173`), methods `GET` and `POST`, and request
@@ -302,9 +306,10 @@ Implementation behavior worth knowing:
 ### Demo seed (`scripts/seed_demo.py`)
 
 - Developer tooling, run from the repository root: `.venv/bin/python scripts/seed_demo.py`.
-- Drops and recreates every table in the app's default database (`fridgefit.db`), so each run
-  gives the same known state and the current schema; then inserts through the ORM (not the
-  HTTP API).
+- Drops and recreates every table in the app's database (`get_database_url()`: `DATABASE_URL`
+  or `fridgefit.db`), so each run gives the same known state and the current schema; then
+  inserts through the ORM (not the HTTP API). Refuses to run (exit with a message, nothing
+  touched) when that database is not SQLite.
 - All dates are relative to the run: 13 ingredients; 14 batches (chicken due tomorrow and in 5
   days, spinach due today plus an expired spinach batch, undated staples, no salmon, too few
   black beans); 6 recipes (fully available, one missing a PRIMARY ingredient, one partly
@@ -376,7 +381,8 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-248 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+254 tests across `tests/test_models.py`, `tests/test_database.py`,
+`tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
