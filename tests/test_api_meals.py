@@ -250,7 +250,7 @@ def test_unrelated_integrity_error_is_not_mistaken_for_a_replay(client, stir_fry
         return real_confirm_meal(session, recipe, **kwargs)
 
     monkeypatch.setattr(meal_workflow, "confirm_meal", confirm_with_an_orphan_rating)
-    with pytest.raises(IntegrityError, match="FOREIGN KEY"):
+    with pytest.raises(IntegrityError, match="(?i)foreign key"):
         confirm(client, stir_fry, key=KEY)
     monkeypatch.undo()
 

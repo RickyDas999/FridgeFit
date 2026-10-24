@@ -89,6 +89,14 @@ Run the same checks CI runs:
 Each domain module has a matching `tests/test_<module>.py`, and each API route module a
 `tests/test_api_<resource>.py`.
 
+Tests use SQLite by default. To run them against PostgreSQL, as CI also does, point
+`TEST_DATABASE_URL` at an empty, disposable database (it is wiped before every test):
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://USER@localhost/fridgefit_test \
+  .venv/bin/python -m pytest tests/
+```
+
 ## Demo walkthrough
 
 A five-minute tour of the full flow. Start from a fresh seed so the numbers match
@@ -144,7 +152,7 @@ app/
 ├── application/    thin workflows combining persistence and domain logic
 └── api/            FastAPI app, routes, and request/response schemas
 frontend/           React + TypeScript + Vite UI (talks to the API over HTTP)
-tests/              pytest suite, run against an in-memory SQLite database
+tests/              pytest suite, run against SQLite (or PostgreSQL via TEST_DATABASE_URL)
 scripts/            developer and CI tooling (demo seed, AI review helper)
 docs/               architecture, domain rules, and current status
 ```
@@ -163,8 +171,8 @@ docs/               architecture, domain rules, and current status
 
 - Changes go through feature branches and pull requests into `main`, using the
   [pull request template](.github/pull_request_template.md).
-- **CI** runs Ruff and pytest on Python 3.11 and 3.12, and a frontend type-check and build, for
-  every pull request. The Python checks must pass to merge.
+- **CI** runs Ruff and pytest on Python 3.11 and 3.12, pytest again against PostgreSQL 16, and a
+  frontend type-check and build, for every pull request. The Python checks must pass to merge.
 - **AI review** is optional and advisory. Adding the `ai-review` label to a pull request runs a
   Claude review that posts one structured review comment, typically costing about a cent. A
   malformed response gets at most two short repair requests. It never blocks merging; its findings are hypotheses for the developer to accept or

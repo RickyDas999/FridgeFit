@@ -52,9 +52,15 @@ def get_database_url() -> str:
 
     Returns:
         The ``DATABASE_URL`` environment variable, or the local SQLite file when it is unset or
-        empty.
+        empty. A PostgreSQL URL without a driver is pointed at psycopg 3.
     """
-    return os.environ.get("DATABASE_URL") or LOCAL_DATABASE_URL
+    url = os.environ.get("DATABASE_URL") or LOCAL_DATABASE_URL
+    # Hosts such as Render hand out postgres:// or postgresql:// URLs. SQLAlchemy rejects the
+    # first and maps the second to a driver that depends on its version, so name psycopg 3.
+    for scheme in ("postgres://", "postgresql://"):
+        if url.startswith(scheme):
+            return "postgresql+psycopg://" + url.removeprefix(scheme)
+    return url
 
 
 def get_engine(database_url: str):

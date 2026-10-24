@@ -28,14 +28,16 @@ Concurrent writes are not currently a meaningful concern.
 - Python 3.11+
 - SQLAlchemy 2.x
 - SQLite for local development and tests; PostgreSQL in production (see Environments and
-  Deployment)
+  Deployment), through the psycopg 3 driver
 - Alembic for schema migrations of persistent databases
 - FastAPI for the V1 HTTP API
 - Pydantic for HTTP request and response schemas
 - React + TypeScript + Vite for the demo frontend (a Node.js toolchain confined to `frontend/`)
 - pytest
 - Ruff for linting, pinned to an exact version and configured in `pyproject.toml`
-- GitHub Actions for CI: lint and tests on every pull request and every push to `main`
+- GitHub Actions for CI: lint and tests on every pull request and every push to `main`; the same
+  test suite also runs against a PostgreSQL service container, so PostgreSQL behavior is tested
+  for real, not mocked
 - An advisory Claude review in GitHub Actions, run on request by labeling a pull request
   `ai-review`: one review request, plus at most two bounded format-repair requests. AI review
   never blocks merging and never writes code; its findings are hypotheses for the developer.
@@ -117,7 +119,7 @@ app/
 ├── application/   thin workflow functions spanning persistence + domain
 └── api/           FastAPI app, routes, Pydantic schemas, error mapping
 frontend/          React + TypeScript + Vite UI; talks to the backend only over the HTTP API
-tests/             pytest suite; tests/conftest.py provides an in-memory SQLite session
+tests/             pytest suite; conftest.py gives each test a fresh SQLite or PostgreSQL database
 .github/workflows/ CI workflow and the advisory AI review workflow
 scripts/           developer and CI tooling (e.g. the AI review helper); not application code
 AGENTS.md          contract for the independent AI reviewer
