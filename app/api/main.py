@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -12,8 +13,24 @@ from app.api.session import SessionDep
 from app.errors import InvalidInputError
 from app.persistence.database import get_database_url, get_engine, get_session_factory
 
-# The Vite dev server's origins. Local development only; deployment will decide its own origins.
+# The Vite dev server's origins, allowed when no deployed frontend origin is configured.
 LOCAL_FRONTEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+def get_frontend_origins() -> list[str]:
+    """Return the browser origins allowed to call the API.
+
+    Returns:
+        Exactly ``FRONTEND_ORIGIN`` when it is set (production), otherwise the local Vite
+        origins. A trailing slash is dropped, since browsers send origins without one.
+
+    Raises:
+        ValueError: If ``FRONTEND_ORIGIN`` is ``*``; the API never allows every origin.
+    """
+    origin = (os.environ.get("FRONTEND_ORIGIN") or "").strip().rstrip("/")
+    if origin == "*":
+        raise ValueError("FRONTEND_ORIGIN must be one exact origin, not '*'.")
+    return [origin] if origin else LOCAL_FRONTEND_ORIGINS
 
 
 @asynccontextmanager
@@ -89,17 +106,20 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     Returns:
         The configured FastAPI application.
+
+    Raises:
+        ValueError: If ``FRONTEND_ORIGIN`` is ``*``.
     """
     if database_url is None:
         database_url = get_database_url()
     app = FastAPI(title="FridgeFit", lifespan=lifespan)
     app.state.engine = get_engine(database_url)
     app.state.session_factory = get_session_factory(app.state.engine)
-    # Lets the local frontend call the API from another origin. No credentials: V1 has no auth.
+    # Lets the frontend call the API from another origin. No credentials: V1 has no auth.
     # Idempotency-Key is a custom header, so browsers preflight requests that send it.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=LOCAL_FRONTEND_ORIGINS,
+        allow_origins=get_frontend_origins(),
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "Idempotency-Key"],
     )

@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
@@ -93,3 +94,24 @@ def test_cors_rejects_other_origins(client):
     assert preflight.status_code == 400
     assert "access-control-allow-origin" not in preflight.headers
     assert "access-control-allow-origin" not in simple.headers
+
+
+def test_cors_allows_only_the_configured_frontend_origin(monkeypatch, empty_database_url):
+    """With FRONTEND_ORIGIN set, that origin is allowed and the local Vite origins are not."""
+    monkeypatch.setenv("FRONTEND_ORIGIN", "https://fridgefit.example.com/")
+    app = create_app(empty_database_url)
+
+    with TestClient(app) as client:
+        deployed = client.get("/health", headers={"Origin": "https://fridgefit.example.com"})
+        local = client.get("/health", headers={"Origin": "http://localhost:5173"})
+
+    assert deployed.headers["access-control-allow-origin"] == "https://fridgefit.example.com"
+    assert "access-control-allow-origin" not in local.headers
+
+
+def test_wildcard_frontend_origin_is_refused(monkeypatch, empty_database_url):
+    """FRONTEND_ORIGIN=* fails at startup instead of opening the API to every origin."""
+    monkeypatch.setenv("FRONTEND_ORIGIN", "*")
+
+    with pytest.raises(ValueError, match="FRONTEND_ORIGIN"):
+        create_app(empty_database_url)

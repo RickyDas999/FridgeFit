@@ -54,7 +54,7 @@ the developer authorizes it; nothing below is implemented unless marked so.
 | 2 | Alembic migration foundation: baseline migration, deliberate startup behavior | Implemented |
 | 3 | PostgreSQL driver and compatibility, verified in CI against real PostgreSQL | Implemented |
 | 4 | Safe demo data: separate dataset insertion from the destructive local reset | Implemented |
-| 5 | Production backend configuration: env-driven CORS, port binding, Render build/start | Not started |
+| 5 | Production backend configuration: env-driven CORS, port binding, Render build/start | Implemented |
 | 6 | Deploy backend + PostgreSQL and validate operations (developer-owned Render steps) | Not started |
 | 7 | Production frontend configuration + deployment, full browser workflow | Not started |
 | 8 | Deployment reliability + documentation closeout | Not started |
@@ -67,7 +67,13 @@ Found while planning, for the slices named:
 - Two confirmations with different keys can still both read the same stock and overwrite each
   other's decrement (lost update). Acceptable under the single-user assumption; revisit if that
   changes. (The same-key race tests pass on PostgreSQL.)
-- Slice 6: provision PostgreSQL 16 on Render, matching CI.
+- Slice 6: apply `render.yaml` as a Blueprint (it creates PostgreSQL 16, matching CI, and the
+  web service). Render's free database is deleted 30 days after creation (14-day grace to
+  upgrade) and has no backups; note the creation date. Rebuilding is: new database, deploy
+  (migrations run on start), `scripts/seed_demo.py --insert-only`. Confirm Render accepts
+  `PYTHON_VERSION: "3.12"` (a full patch version may be required).
+- Slice 6 → 7: until `FRONTEND_ORIGIN` is set, the deployed API falls back to the local Vite
+  origins. Set it to the static site's exact origin once that URL exists.
 
 ## Known Follow-ups
 
@@ -215,10 +221,12 @@ Implementation behavior worth knowing:
   Run locally with `.venv/bin/uvicorn app.api.main:app --reload`.
 - Startup (lifespan) does not create tables; the schema comes from migrations. Shutdown disposes
   the engine.
-- CORS (`CORSMiddleware`) allows only the local Vite origins in `LOCAL_FRONTEND_ORIGINS`
-  (`http://localhost:5173`, `http://127.0.0.1:5173`), methods `GET` and `POST`, and request
-  headers `Content-Type` and `Idempotency-Key`; no credentials. Other origins get no CORS
-  headers (preflight → 400).
+- CORS (`CORSMiddleware`) allows the origins from `get_frontend_origins()`: exactly
+  `FRONTEND_ORIGIN` when that environment variable is set (trailing `/` dropped; `*` is refused
+  with a `ValueError` at startup), otherwise the local Vite origins in `LOCAL_FRONTEND_ORIGINS`
+  (`http://localhost:5173`, `http://127.0.0.1:5173`). Methods `GET` and `POST`, request headers
+  `Content-Type` and `Idempotency-Key`; no credentials. Other origins get no CORS headers
+  (preflight → 400).
 - `app/api/session.py`: `get_session` gives each request its own Session, closed when the
   request ends; uncommitted changes are discarded. Routes receive it through `SessionDep`.
 - One route module per resource (`ingredients.py`, `inventory.py`, `recipes.py`, `nutrition.py`,
@@ -308,6 +316,22 @@ Implementation behavior worth knowing:
   a key gets the same second lookup (no rollback needed: nothing was written), so a shortfall
   caused by a same-key winner replays instead of returning 409.
 
+### Deployment configuration (`render.yaml`)
+
+Prepared, not yet applied (Slice 6 applies it). A Render Blueprint declaring:
+
+- `fridgefit-api`: free Python web service. Build `pip install .` (runtime dependencies only).
+  Start `alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT`: the free
+  plan has no pre-deploy command, so migrations run before every start, a no-op when current. On
+  a paid plan, `alembic upgrade head` would move to a pre-deploy command. Health check
+  `/health`. Environment: `PYTHON_VERSION` 3.12, `DATABASE_URL` linked from the database,
+  `FRONTEND_ORIGIN` entered in the dashboard (`sync: false`).
+- `fridgefit-db`: free PostgreSQL 16, database and user `fridgefit`.
+- No secrets in the file. Rehearsed locally (clean virtualenv, the exact build and start
+  commands, an empty PostgreSQL database and a plain `postgresql://` URL): the first start
+  migrated, `/health` and CORS answered as configured, and a restart ran no migration and kept
+  the data.
+
 ### Demo seed (`scripts/seed_demo.py`)
 
 - Run from the repository root against the app's database (`get_database_url()`:
@@ -324,8 +348,8 @@ Implementation behavior worth knowing:
   runs instead of falling through to the reset.
 - All dates are relative to when the data is inserted: 13 ingredients; 14 batches (chicken due
   tomorrow and in 5 days, spinach due today plus an expired spinach batch, undated staples, no
-  salmon, too few black beans); 6 recipes (fully available, one missing a PRIMARY ingredient, one partly
-  available); a goal effective 30 days ago; 7 past meals with macros from
+  salmon, too few black beans); 6 recipes (fully available, one missing a PRIMARY ingredient,
+  one partly available); a goal effective 30 days ago; 7 past meals with macros from
   `calculate_recipe_macros` (the rice bowl twice in the last 7 days; today's breakfast
   unrated, the rest rated 2–5).
 - Past meals do not consume current inventory.
@@ -393,7 +417,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-262 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+264 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:

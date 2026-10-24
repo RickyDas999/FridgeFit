@@ -1,0 +1,33 @@
+# Render Blueprint: the deployed backend and its PostgreSQL database. Applied from the Render
+# dashboard (New > Blueprint). No secrets live here: DATABASE_URL is linked from the database,
+# and FRONTEND_ORIGIN is entered in the dashboard.
+
+services:
+  - type: web
+    name: fridgefit-api
+    runtime: python
+    plan: free
+    buildCommand: pip install .
+    # Migrations run before the API starts. The free plan has no pre-deploy command, so this also
+    # runs on every restart; `upgrade head` does nothing when the database is already current.
+    startCommand: alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT
+    # Answers only when the API can reach PostgreSQL (SELECT 1).
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fridgefit-db
+          property: connectionString
+      # The deployed frontend's exact origin, e.g. https://fridgefit.onrender.com (Slice 7).
+      - key: FRONTEND_ORIGIN
+        sync: false
+
+databases:
+  - name: fridgefit-db
+    plan: free
+    # Matches the PostgreSQL version CI tests against.
+    postgresMajorVersion: "16"
+    databaseName: fridgefit
+    user: fridgefit
