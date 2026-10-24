@@ -327,6 +327,8 @@ Prepared, not yet applied (Slice 6 applies it). A Render Blueprint declaring:
   `/health`. Environment: `PYTHON_VERSION` 3.12, `DATABASE_URL` linked from the database,
   `FRONTEND_ORIGIN` entered in the dashboard (`sync: false`).
 - `fridgefit-db`: free PostgreSQL 16, database and user `fridgefit`.
+- Both in the `virginia` region (US East), so the API reaches the database over Render's private
+  network. A database's region is fixed when it is created.
 - No secrets in the file. Rehearsed locally (clean virtualenv, the exact build and start
   commands, an empty PostgreSQL database and a plain `postgresql://` URL): the first start
   migrated, `/health` and CORS answered as configured, and a restart ran no migration and kept

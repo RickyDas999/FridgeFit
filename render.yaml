@@ -7,6 +7,8 @@ services:
     name: fridgefit-api
     runtime: python
     plan: free
+    # Same region as the database, so the API uses Render's private network; near the developer.
+    region: virginia
     buildCommand: pip install .
     # Migrations run before the API starts. The free plan has no pre-deploy command, so this also
     # runs on every restart; `upgrade head` does nothing when the database is already current.
@@ -27,6 +29,8 @@ services:
 databases:
   - name: fridgefit-db
     plan: free
+    # Fixed at creation; must match the web service's region.
+    region: virginia
     # Matches the PostgreSQL version CI tests against.
     postgresMajorVersion: "16"
     databaseName: fridgefit
