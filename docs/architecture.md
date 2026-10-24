@@ -116,6 +116,8 @@ AGENTS.md          contract for the independent AI reviewer
     that fails before that commit writes nothing; its changes are discarded when the session
     closes.
   - `confirm_meal` keeps its current behavior of committing its own atomic transaction.
+  - Code that catches a failed commit (e.g. an `IntegrityError`) and keeps using the session must
+    call `session.rollback()` first; SQLAlchemy refuses further queries until it does.
 - Do not add repositories, generic service classes, Unit of Work frameworks, dependency-injection
   frameworks, or similar layers. FastAPI's built-in `Depends` is enough to provide the
   request-scoped session.
