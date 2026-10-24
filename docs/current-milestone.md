@@ -86,6 +86,8 @@ Deliberate shortcuts and cleanup, recorded so they are not lost:
 - New database constraints (e.g. unique recipe names) reach an existing `fridgefit.db` only if it
   is recreated, because startup's `create_all` never alters tables (Alembic is Milestone 6
   Slice 2).
+- Authentication is deferred: once deployed (Milestone 6), the demo is public and anyone with the
+  URL can read and write its data.
 - The frontend has no automated tests; CI only type-checks and builds it. Behavior is verified
   by hand (README demo walkthrough).
 - Every write (logging or rating a meal) refetches all four dashboard sections; fine for one
