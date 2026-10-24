@@ -212,6 +212,34 @@ def test_losing_a_same_key_race_returns_the_winners_meal(app, client, stir_fry, 
         assert session.scalar(select(func.count()).select_from(MealLogIngredient)) == 2
 
 
+def test_shortfall_caused_by_a_same_key_winner_returns_the_winners_meal(
+    app, client, stir_fry, monkeypatch
+):
+    """A request that finds stock short only because its key's winner consumed it replays."""
+    real_confirm_meal = meal_workflow.confirm_meal
+    winner_ids = []
+
+    def winner_commits_before_stock_loads(session, recipe, **kwargs):
+        """Commit the same confirmation in another session, then run this request's own.
+
+        This request has looked up its key (nothing) but not loaded the stock, so it sees the
+        winner's decrement and fails on a shortfall before reaching the unique constraint.
+        """
+        with app.state.session_factory() as other_session:
+            other_recipe = other_session.get(Recipe, recipe.id)
+            winner_ids.append(real_confirm_meal(other_session, other_recipe, **kwargs).id)
+        return real_confirm_meal(session, recipe, **kwargs)
+
+    monkeypatch.setattr(meal_workflow, "confirm_meal", winner_commits_before_stock_loads)
+    loser = confirm(client, stir_fry, key=KEY)
+
+    assert loser.status_code == 200
+    assert loser.json()["id"] == winner_ids[0]
+    assert on_hand(client) == {"Chicken": 200, "Rice": 50}
+    with app.state.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(MealLog)) == 1
+
+
 def test_unrelated_integrity_error_is_not_mistaken_for_a_replay(client, stir_fry, monkeypatch):
     """A constraint violation other than a reused key still fails and leaves the key unused."""
     real_confirm_meal = meal_workflow.confirm_meal

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.domain.meal_confirmation import confirm_meal
+from app.domain.meal_confirmation import InsufficientInventoryError, confirm_meal
 from app.persistence.models import MealLog, Recipe
 
 
@@ -31,8 +31,9 @@ def confirm_recipe_meal(
 
     The first successful confirmation for a key is authoritative: a retry with the same key
     returns that MealLog without consuming inventory again, even if the retried request differs.
-    This includes a concurrent request that commits the same new key first: this call's commit
-    is rejected by the unique constraint, rolled back, and the winner's MealLog is returned.
+    This includes a concurrent request that commits the same new key first: whether this call
+    then fails on the unique constraint (rolled back) or on the stock the winner consumed, the
+    winner's MealLog is returned.
     Without a key, every call confirms a new meal.
 
     Args:
@@ -49,7 +50,8 @@ def confirm_recipe_meal(
 
     Raises:
         InvalidInputError: If the recipe or servings are invalid.
-        InsufficientInventoryError: If inventory is short and ``allow_shortfall`` is False.
+        InsufficientInventoryError: If inventory is short, ``allow_shortfall`` is False, and no
+            MealLog with this key exists.
         IntegrityError: If the commit violates a constraint and no MealLog with this key exists.
     """
     if idempotency_key is not None:
@@ -67,6 +69,15 @@ def confirm_recipe_meal(
             allow_shortfall=allow_shortfall,
             idempotency_key=idempotency_key,
         )
+    except InsufficientInventoryError:
+        if idempotency_key is None:
+            raise
+        # The shortfall may be the stock a same-key request just consumed after our lookup
+        # above. Nothing was written, so the session needs no rollback before looking again.
+        winner = _find_meal_log_by_key(session, idempotency_key)
+        if winner is None:
+            raise
+        return MealConfirmation(meal_log=winner, created=False)
     except IntegrityError:
         if idempotency_key is None:
             raise
