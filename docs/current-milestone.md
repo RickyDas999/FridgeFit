@@ -88,8 +88,11 @@ Deliberate shortcuts and cleanup, recorded so they are not lost:
   by hand (README demo walkthrough).
 - Every write (logging or rating a meal) refetches all four dashboard sections; fine for one
   user, narrower refreshes if it ever matters.
-- "Today" is the server's date (endpoints default `as_of` to it); a server in another timezone
-  would shift the day boundary.
+- "Today" and default meal times come from the server's clock (the frontend sends neither). The
+  deployed server's clock is UTC, so `render.yaml` pins `TZ=America/New_York`, the single
+  user's timezone; a user elsewhere would need a different `TZ`, or the frontend sending local
+  dates and times. Meal 8 on the deployed database was logged before `TZ` was set and is
+  stamped in UTC.
 - The deployed free PostgreSQL database (created 2026-10-24) expires on **2026-11-23** and is
   deleted 14 days later; it has no backups. Before then: upgrade it, or let it lapse and rebuild
   (new database, deploy, `scripts/seed_demo.py --insert-only`).
@@ -322,9 +325,9 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
   Start `alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT`: the free
   plan has no pre-deploy command, so migrations run before every start, a no-op when current. On
   a paid plan, `alembic upgrade head` would move to a pre-deploy command. Health check
-  `/health`. Environment: `PYTHON_VERSION` 3.12, `DATABASE_URL` linked from the database,
-  `FRONTEND_ORIGIN` entered in the dashboard (`sync: false`; empty until Slice 7). Auto-deploy
-  is set in the dashboard to "After CI Checks Pass".
+  `/health`. Environment: `PYTHON_VERSION` 3.12, `TZ` `America/New_York`, `DATABASE_URL`
+  linked from the database, `FRONTEND_ORIGIN` entered in the dashboard (`sync: false`; empty
+  until Slice 7). Auto-deploy is set in the dashboard to "After CI Checks Pass".
 - `fridgefit-db`: free PostgreSQL 16, database and user `fridgefit`.
 - Both in the `virginia` region (US East), so the API reaches the database over Render's private
   network. A database's region is fixed when it is created.

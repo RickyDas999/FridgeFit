@@ -18,6 +18,10 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.12"
+      # Stored times are the user's naive local time, and "today" defaults to the server's date.
+      # Render's clock is UTC, so pin the single user's timezone (daylight saving included).
+      - key: TZ
+        value: America/New_York
       - key: DATABASE_URL
         fromDatabase:
           name: fridgefit-db
