@@ -3,7 +3,7 @@
 Snapshot of the repository's actual state. Update this file whenever a slice or milestone lands.
 If it disagrees with the code, the code is correct and this file is stale.
 
-Last updated: 2026-10-13
+Last updated: 2026-10-24
 
 ---
 
@@ -29,15 +29,26 @@ Last updated: 2026-10-13
 **Advisory AI pull-request review is integrated into CI** (see CI below). This was pipeline work,
 not a feature milestone.
 
-**No feature milestone is active.** The next one has not been chosen. Do not start new feature
-work until the developer approves the next milestone and its scope.
+**Active milestone: 5 — Production Reliability.** Approved checkpoints are implemented one at a
+time; do not start the next until the developer approves it. Deployment, PostgreSQL, Alembic, and
+AI work are future directions, not started.
+
+- **Concurrent idempotency hardening** (implemented). Previously, two requests with the same new
+  `Idempotency-Key` could both miss the key lookup and both attempt confirmation; the unique
+  constraint on `MealLog.idempotency_key` rejected the later commit, which surfaced as a 500. Now
+  the losing request rolls back its failed transaction, looks the key up again, and returns the
+  winner's MealLog as an ordinary replay (200). Exactly one MealLog, one set of
+  MealLogIngredient rows, and one inventory decrement exist for the key. Regression tests:
+  `test_losing_a_same_key_race_returns_the_winners_meal` and
+  `test_unrelated_integrity_error_is_not_mistaken_for_a_replay` in `tests/test_api_meals.py`.
 
 ## Known Follow-ups
 
 Deliberate shortcuts and cleanup, recorded so they are not lost:
 
-- Two concurrent confirmations with the same new idempotency key are not handled: the unique
-  constraint rejects the second (a 500), so nothing is logged twice.
+- A same-key request that loads inventory only after the winner has committed plans against the
+  depleted stock; without `allow_shortfall` it can return 409 instead of replaying the winner's
+  meal. Nothing is written twice; only the response differs.
 - New database constraints (e.g. unique recipe names) reach an existing `fridgefit.db` only if it
   is recreated, because startup's `create_all` never alters tables and Alembic is deferred.
 - The frontend has no automated tests; CI only type-checks and builds it. Behavior is verified
@@ -244,9 +255,10 @@ Implementation behavior worth knowing:
   `recommend_recipes`. Neither meal history nor ratings are loaded in full. Read-only.
 - `meals.py`: `confirm_recipe_meal(session, recipe, ...)` returns the existing MealLog (with
   `created=False`) when the idempotency key was already confirmed; otherwise calls
-  `confirm_meal`, which writes the key in its own atomic commit. Concurrent requests with the
-  same new key are not handled: the unique constraint rejects the second one (a 500), so nothing
-  is logged twice.
+  `confirm_meal`, which writes the key in its own atomic commit. If that commit fails with an
+  `IntegrityError` while a key was given, it rolls the session back and looks the key up again:
+  found means another request committed it first, so that MealLog is returned as a replay
+  (`created=False`); not found means an unrelated violation, which is re-raised.
 
 ### Demo seed (`scripts/seed_demo.py`)
 
@@ -325,7 +337,7 @@ Implementation behavior worth knowing:
 
 ### Tests
 
-245 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
+247 tests across `tests/test_models.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
 
