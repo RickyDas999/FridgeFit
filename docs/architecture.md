@@ -209,6 +209,8 @@ AGENTS.md          contract for the independent AI reviewer
 
 ## Persistence Conventions
 
+- Engines use `pool_pre_ping`, so a pooled connection that died while idle (database restart,
+  dropped connection) is replaced before use instead of failing a request.
 - SQLite foreign-key enforcement is enabled on every SQLite connection (`PRAGMA
   foreign_keys=ON` via a SQLAlchemy connect-event hook). SQLite leaves foreign keys unenforced by
   default; PostgreSQL enforces them natively.
