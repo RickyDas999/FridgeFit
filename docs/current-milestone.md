@@ -3,7 +3,7 @@
 Snapshot of the repository's actual state. Update this file whenever a slice or milestone lands.
 If it disagrees with the code, the code is correct and this file is stale.
 
-Last updated: 2026-10-24
+Last updated: 2026-10-25
 
 ---
 
@@ -41,11 +41,17 @@ not a feature milestone.
    `test_shortfall_caused_by_a_same_key_winner_returns_the_winners_meal`, and
    `test_unrelated_integrity_error_is_not_mistaken_for_a_replay` in `tests/test_api_meals.py`.
 
-**Active milestone: 6 — Deployment + Durable Persistence.** Moves FridgeFit from a local SQLite
-demo to a deployed system (Render Static Site → Render FastAPI web service → Render PostgreSQL)
-while keeping SQLite for local development. The target architecture is recorded in
-`docs/architecture.md` › Environments and Deployment. Slices land one at a time, each only after
-the developer authorizes it; nothing below is implemented unless marked so.
+6. **Deployment + Durable Persistence** (completed 2026-10-25): FridgeFit moved from a local
+   SQLite demo to a deployed system (Render static site → Render FastAPI web service → Render
+   PostgreSQL 16) while keeping SQLite for local development and fast tests. `DATABASE_URL`
+   selects the database; Alembic migrations build and evolve every real database; the suite also
+   runs on PostgreSQL in CI; the destructive demo reset cannot target production, and
+   `--insert-only` loaded the deployed demo data; CORS allows exactly the deployed frontend's
+   origin. Closed with deployment-reliability work: pooled connections are pre-pinged so a
+   database restart fails no request, database-failure behavior was reproduced, and the README
+   documents the deployment. The deployed browser → API → PostgreSQL workflow, including
+   meal-confirmation writes and idempotent replay, was exercised. Architecture:
+   `docs/architecture.md` › Environments and Deployment; operations: README › Deployment.
 
 | Slice | Scope | Status |
 |---|---|---|
@@ -57,20 +63,25 @@ the developer authorizes it; nothing below is implemented unless marked so.
 | 5 | Production backend configuration: env-driven CORS, port binding, Render build/start | Implemented |
 | 6 | Deploy backend + PostgreSQL and validate operations (developer-owned Render steps) | Implemented |
 | 7 | Production frontend configuration + deployment, full browser workflow | Implemented |
-| 8 | Deployment reliability + documentation closeout | Not started |
+| 8 | Deployment reliability + documentation closeout | Implemented |
 
-The milestone is complete only when the deployed browser → API → PostgreSQL workflow, including
-meal-confirmation writes and idempotent replay, has actually been exercised.
+Slice 8: `pool_pre_ping` on every engine (a PostgreSQL test kills the API's pooled connections
+and the next request still succeeds; locally, a real PostgreSQL restart failed no request);
+database-down behavior reproduced locally (500 with the `OperationalError` logged, recovery
+without restarting the API); README › Deployment; `AGENTS.md` updated for SQLite locally and
+PostgreSQL in production. Audit on 2026-10-25: every item of the milestone's definition of done
+checked against CI, the repository, and the live deployment.
 
-Found while planning, for the slices named:
-
-- Two confirmations with different keys can still both read the same stock and overwrite each
-  other's decrement (lost update). Acceptable under the single-user assumption; revisit if that
-  changes. (The same-key race tests pass on PostgreSQL.)
+**No milestone is active.** The next one has not been chosen. Do not start new feature work until
+the developer approves the next milestone and its scope.
 
 ## Known Follow-ups
 
 Deliberate shortcuts and cleanup, recorded so they are not lost:
+
+- Two confirmations with different keys can both read the same stock and overwrite each other's
+  decrement (lost update). Acceptable under the single-user assumption; revisit if that changes.
+  (The same-key race tests pass on PostgreSQL.)
 
 - A `fridgefit.db` created before Alembic has no migration version, so `alembic upgrade head`
   fails on it ("table already exists"); re-running the seed rebuilds it at the latest migration.
@@ -541,6 +552,5 @@ with:
   `DEFAULT_WEIGHTS`)
 - Manual inventory correction
 - Recipe editing and deletion
-- Alembic migrations, PostgreSQL support, and deployment (Milestone 6, in progress; see Status)
 - Docker (not planned unless deployment needs it)
 - Redis, queues, and microservices
