@@ -56,7 +56,7 @@ the developer authorizes it; nothing below is implemented unless marked so.
 | 4 | Safe demo data: separate dataset insertion from the destructive local reset | Implemented |
 | 5 | Production backend configuration: env-driven CORS, port binding, Render build/start | Implemented |
 | 6 | Deploy backend + PostgreSQL and validate operations (developer-owned Render steps) | Implemented |
-| 7 | Production frontend configuration + deployment, full browser workflow | In progress |
+| 7 | Production frontend configuration + deployment, full browser workflow | Implemented |
 | 8 | Deployment reliability + documentation closeout | Not started |
 
 The milestone is complete only when the deployed browser → API → PostgreSQL workflow, including
@@ -328,9 +328,10 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
   static site's exact origin (committed: it is public). Auto-deploy is set in the dashboard to
   "After CI Checks Pass".
 - `fridgefit` (Slice 7): static site at `https://fridgefit-3f2a.onrender.com` (Render added the
-  suffix: `fridgefit.onrender.com` is an unrelated site), built from `frontend/`. Build `npm ci && npm run build` with
-  `NODE_VERSION` 22 (as in CI) and `VITE_API_BASE_URL=https://fridgefit-api.onrender.com`,
-  which Vite bakes into the bundle; publishes `frontend/dist` from Render's CDN. No rewrite
+  suffix: `fridgefit.onrender.com` is an unrelated site), built from `frontend/`. Build
+  `npm ci && npm run build` with `NODE_VERSION` 22 (as in CI) and
+  `VITE_API_BASE_URL=https://fridgefit-api.onrender.com`, which Vite bakes into the bundle;
+  publishes `frontend/dist` from Render's CDN. No rewrite
   rules: the frontend is one page with no client-side routes. The build was rehearsed on a copy
   of `frontend/`: it succeeded and the bundle holds the production API URL, not the local
   default.
@@ -359,6 +360,23 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
   listed and no migration ran; `POST /recipes/9999/confirm` → 404, visible in Render's logs.
 - Render probes `HEAD /` and `GET /`; both return 404 because the API has no root route, which
   is expected.
+
+### Deployment (Slice 7)
+
+- Frontend: `https://fridgefit-3f2a.onrender.com` (static site `fridgefit`), serving the bundle
+  built from this repository (`assets/index-Ci82eVnf.js` at the time), which calls
+  `https://fridgefit-api.onrender.com`. Auto-deploy: "After CI Checks Pass", like the API.
+- CORS verified against the live API on 2026-10-25: requests from the static site's origin get
+  `access-control-allow-origin: https://fridgefit-3f2a.onrender.com`; requests from the
+  unrelated `https://fridgefit.onrender.com` get no CORS header.
+- Browser workflow verified by the developer on the deployed site on 2026-10-25: the dashboard
+  connected and loaded ranked recommendations with their reasons; a recommendation's detail
+  opened; logging a meal updated inventory, remaining macros, and today's history (at local
+  Eastern time); rating the meal showed it as rated; light and dark mode both rendered
+  correctly.
+- On the free plan a sleeping API makes the first load wait (the page itself loads at once,
+  since static sites do not sleep); the dashboard shows its loading or "Offline" state until the
+  API wakes.
 
 ### Demo seed (`scripts/seed_demo.py`)
 
