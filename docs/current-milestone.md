@@ -67,8 +67,6 @@ Found while planning, for the slices named:
 - Two confirmations with different keys can still both read the same stock and overwrite each
   other's decrement (lost update). Acceptable under the single-user assumption; revisit if that
   changes. (The same-key race tests pass on PostgreSQL.)
-- Slice 6 → 7: until `FRONTEND_ORIGIN` is set, the deployed API falls back to the local Vite
-  origins. Set it to the static site's exact origin once that URL exists.
 
 ## Known Follow-ups
 
@@ -326,9 +324,11 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
   plan has no pre-deploy command, so migrations run before every start, a no-op when current. On
   a paid plan, `alembic upgrade head` would move to a pre-deploy command. Health check
   `/health`. Environment: `PYTHON_VERSION` 3.12, `TZ` `America/New_York`, `DATABASE_URL`
-  linked from the database, `FRONTEND_ORIGIN` entered in the dashboard (`sync: false`; empty
-  until Slice 7). Auto-deploy is set in the dashboard to "After CI Checks Pass".
-- `fridgefit` (Slice 7): static site from `frontend/`. Build `npm ci && npm run build` with
+  linked from the database, and `FRONTEND_ORIGIN=https://fridgefit-3f2a.onrender.com`, the
+  static site's exact origin (committed: it is public). Auto-deploy is set in the dashboard to
+  "After CI Checks Pass".
+- `fridgefit` (Slice 7): static site at `https://fridgefit-3f2a.onrender.com` (Render added the
+  suffix: `fridgefit.onrender.com` is an unrelated site), built from `frontend/`. Build `npm ci && npm run build` with
   `NODE_VERSION` 22 (as in CI) and `VITE_API_BASE_URL=https://fridgefit-api.onrender.com`,
   which Vite bakes into the bundle; publishes `frontend/dist` from Render's CDN. No rewrite
   rules: the frontend is one page with no client-side routes. The build was rehearsed on a copy
