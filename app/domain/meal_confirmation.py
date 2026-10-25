@@ -1,12 +1,10 @@
-import math
 import uuid
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.domain.fefo_consumption import plan_fefo_consumption
+from app.domain.recipe_consumption import plan_recipe_consumption
 from app.domain.recipe_macros import calculate_recipe_macros
-from app.domain.validation import validate_recipe, validate_servings
 from app.persistence.models import MealLog, MealLogIngredient, Recipe
 
 
@@ -70,34 +68,15 @@ def confirm_meal(
         InsufficientInventoryError: If any ingredient is short and
             ``allow_shortfall`` is False.
     """
-    validate_recipe(recipe)
-    validate_servings(servings)
-    scale = servings / recipe.servings
+    consumption = plan_recipe_consumption(
+        recipe,
+        servings,
+        {line.ingredient_id: line.ingredient.batches for line in recipe.recipe_ingredients},
+    )
+    if consumption.shortfalls and not allow_shortfall:
+        raise InsufficientInventoryError(consumption.shortfalls)
 
-    consumption_plans = {}
-    fulfilled_quantities = {}
-    shortfalls = {}
-
-    for recipe_ingredient in recipe.recipe_ingredients:
-        needed = recipe_ingredient.quantity * scale
-        available_batches = [
-            b for b in recipe_ingredient.ingredient.batches if b.quantity_remaining > 0
-        ]
-        plan = plan_fefo_consumption(available_batches, needed)
-        fulfilled = sum(consumption.quantity for consumption in plan)
-
-        consumption_plans[recipe_ingredient] = plan
-        fulfilled_quantities[recipe_ingredient.id] = fulfilled
-
-        # Scaled quantities can be fractional, and summing per-batch draws can land a rounding
-        # error below `needed`; only a real gap counts as a shortfall.
-        if fulfilled < needed and not math.isclose(fulfilled, needed):
-            shortfalls[recipe_ingredient.ingredient_id] = (needed, fulfilled)
-
-    if shortfalls and not allow_shortfall:
-        raise InsufficientInventoryError(shortfalls)
-
-    macros = calculate_recipe_macros(recipe, quantity_overrides=fulfilled_quantities)
+    macros = calculate_recipe_macros(recipe, quantity_overrides=consumption.fulfilled_quantities)
     meal_log = MealLog(
         name=name or recipe.name,
         recipe_id=recipe.id,
@@ -110,20 +89,19 @@ def confirm_meal(
     )
     session.add(meal_log)
 
-    for recipe_ingredient, plan in consumption_plans.items():
-        actual_quantity = fulfilled_quantities[recipe_ingredient.id]
+    for line in consumption.lines:
         # MealLogIngredient enforces quantity > 0, so an ingredient with nothing
         # available gets no traceability row rather than a zero-quantity one.
-        if actual_quantity > 0:
+        if line.quantity_fulfilled > 0:
             session.add(MealLogIngredient(
                 meal_log=meal_log,
-                ingredient_id=recipe_ingredient.ingredient_id,
-                quantity=actual_quantity,
+                ingredient_id=line.recipe_ingredient.ingredient_id,
+                quantity=line.quantity_fulfilled,
             ))
-        for consumption in plan:
-            consumption.batch.quantity_remaining -= consumption.quantity
-            if consumption.batch.quantity_remaining == 0:
-                consumption.batch.depleted_at = consumed_at
+        for draw in line.draws:
+            draw.batch.quantity_remaining -= draw.quantity
+            if draw.batch.quantity_remaining == 0:
+                draw.batch.depleted_at = consumed_at
 
     session.commit()
     return meal_log
