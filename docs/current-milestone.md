@@ -201,6 +201,7 @@ Schema details beyond the core domain rules:
 | Current nutrition state | `nutrition_state.py` | `select_applicable_goal`, `calculate_remaining_macros` |
 | Inventory aggregation | `inventory_aggregation.py` | `aggregate_inventory_by_ingredient(batches)` |
 | FEFO consumption | `fefo_consumption.py` | `plan_fefo_consumption(batches, quantity_needed)` |
+| Recipe consumption planning | `recipe_consumption.py` | `plan_recipe_consumption(recipe, servings, batches_by_ingredient)` |
 | Meal confirmation | `meal_confirmation.py` | `confirm_meal(session, recipe, *, servings, consumed_at, name=None, allow_shortfall=False, idempotency_key=None)` |
 
 Implementation behavior worth knowing:
@@ -212,9 +213,13 @@ Implementation behavior worth knowing:
 - **Inventory aggregation** sums `quantity_remaining` per ingredient.
 - **FEFO planning** is read-only. It returns a plan, and returns a partial plan (not an error) when
   inventory is insufficient.
+- **Recipe consumption planning** is read-only. It scales every ingredient to `servings`, plans
+  FEFO draws from the given batches per ingredient, and returns each line's draws, the fulfilled
+  quantity per recipe ingredient, and any shortfalls (needed vs. available). Batches may be any
+  objects with `ingredient_id`, `quantity_remaining`, `use_by_date`, and `purchased_at`.
 - **Meal confirmation** scales every ingredient to the required `servings` (cook only what is
-  eaten), plans every ingredient before mutating anything, then commits the MealLog,
-  MealLogIngredients, and batch decrements in one transaction.
+  eaten), plans every ingredient with `plan_recipe_consumption` before mutating anything, then
+  commits the MealLog, MealLogIngredients, and batch decrements in one transaction.
   - By default, any shortfall raises `InsufficientInventoryError` and nothing is written.
   - With `allow_shortfall=True`, the meal is confirmed anyway because kitchen inventory is an
     estimate. Only available inventory is consumed and batches never go negative. Emptied batches
@@ -532,7 +537,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-266 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+271 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
