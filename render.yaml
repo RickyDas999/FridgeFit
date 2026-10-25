@@ -1,6 +1,6 @@
 # Render Blueprint: the deployed frontend, backend, and PostgreSQL database. Applied from the
 # Render dashboard (New > Blueprint). No secrets live here: DATABASE_URL is linked from the
-# database, and FRONTEND_ORIGIN is entered in the dashboard.
+# database; the URLs below are public.
 
 services:
   - type: web
@@ -26,9 +26,10 @@ services:
         fromDatabase:
           name: fridgefit-db
           property: connectionString
-      # The deployed frontend's exact origin, e.g. https://fridgefit.onrender.com (Slice 7).
+      # The only browser origin CORS allows: the static site below. Render assigned the suffix
+      # because fridgefit.onrender.com belongs to someone else; never allow that origin.
       - key: FRONTEND_ORIGIN
-        sync: false
+        value: https://fridgefit-3f2a.onrender.com
 
   # The React build, served as static files from Render's CDN (no region, no server process).
   - type: web
