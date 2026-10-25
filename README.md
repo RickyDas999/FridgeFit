@@ -278,7 +278,7 @@ docs/               architecture, domain rules, and current status
 - Changes go through feature branches and pull requests into `main`, using the
   [pull request template](.github/pull_request_template.md).
 - **CI** runs Ruff and pytest on Python 3.11 and 3.12, pytest again against PostgreSQL 16, and a
-  frontend type-check and build, for every pull request. The Python checks must pass to merge.
+  frontend type-check and build, for every pull request. All four must pass to merge.
 - **AI review** is optional and advisory. Adding the `ai-review` label to a pull request runs a
   Claude review that posts one structured review comment, typically costing about a cent. A
   malformed response gets at most two short repair requests. It never blocks merging; its findings are hypotheses for the developer to accept or

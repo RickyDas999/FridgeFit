@@ -513,9 +513,9 @@ with:
   pointing at a throwaway `postgres:16` service container, so models, migrations, and API
   behavior are exercised on real PostgreSQL. Its credentials exist only inside that container.
 - Ruff is pinned (`ruff==0.16.10`) and configured in `pyproject.toml`.
-- `main` is protected: changes merge only through a pull request with both CI checks passing; no
-  approval is required, and the admin can bypass in an emergency. The PostgreSQL job is not a
-  required check unless the developer adds it to branch protection.
+- `main` is protected: changes merge only through a pull request whose four required checks pass
+  ("Lint and test" on Python 3.11 and 3.12, "Test on PostgreSQL 16", and "Frontend build"); no
+  approval is required, and the admin can bypass in an emergency.
 - `.github/workflows/ai-review.yml` runs an advisory semantic review when the developer adds the
   `ai-review` label to a pull request (or runs the workflow manually). It never runs on ordinary
   pushes.
