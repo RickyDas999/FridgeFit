@@ -45,8 +45,10 @@ Spend reasoning on problems tests can pass without catching:
 
 Full rules live in the docs; these are the ones most often at stake.
 
-- FridgeFit is a single-user modular monolith. SQLite is intentional for V1. Do not recommend
-  Redis, queues, microservices, or distributed infrastructure without a concrete current need.
+- FridgeFit is a single-user modular monolith. SQLite is intentional for local development and
+  tests; production uses PostgreSQL through `DATABASE_URL`. Schema changes go through reviewed
+  Alembic migrations, never `create_all` at startup. Do not recommend Redis, queues,
+  microservices, or distributed infrastructure without a concrete current need.
 - Ingredient nutrition reference data is separate from physical inventory.
 - Inventory is batch-based, and consumption follows FEFO.
 - Manual inventory correction is not nutrition consumption.
