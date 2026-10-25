@@ -105,12 +105,88 @@ External services are allowed when they solve a real problem. They are **boundar
 internal truth**: data crossing into FridgeFit is normalized and persisted or recalculated
 deterministically before it is trusted.
 
-Expected future external boundaries:
+Expected external boundaries:
 
-- a nutrition-data API;
-- the Claude API, for optional meal generation.
+- the Claude API, for user-triggered multi-meal planning: approved for Milestone 7 (see AI Meal
+  Planning below), not yet implemented;
+- a nutrition-data API: not approved; may not be implemented until explicitly requested.
 
-Neither is implemented. Neither may be implemented until explicitly requested.
+AI recipe generation (see `docs/domain-rules.md` › AI Trust Boundary) is a separate capability
+with no approved milestone.
+
+## AI Meal Planning
+
+Approved for Milestone 7. **None of this is implemented yet**; `docs/current-milestone.md` records
+which slices have landed. These decisions constrain every Milestone 7 slice.
+
+### Shape
+
+```text
+user planning request
+  ↓
+AI planning workflow (application layer)
+  ↓  bounded, read-only internal tools
+existing FridgeFit application/domain logic
+  ↓
+candidate multi-meal plan
+  ↓
+deterministic validation
+  ↓  valid                       ↓  invalid
+returned plan        one bounded correction → validate again → valid, or deterministic fallback
+```
+
+- Claude is a planning layer **above** the deterministic system. It may select, sequence, and
+  explain meals from FridgeFit's existing recipes. Deterministic code remains authoritative for
+  inventory quantities, nutrition values, recipe macros, FEFO, nutrition state, and whether a plan
+  is feasible.
+- **Read-only.** Planning never writes product state: no inventory changes, MealLogs, ratings, or
+  edits to recipes, ingredients, or goals. Meals are still logged only through the existing
+  confirmation workflow, explicitly by the user.
+- **Internal tools are Python calls, not HTTP endpoints.** The planner calls application/domain
+  functions (or thin read-only adapters) in-process. Tools are few, narrowly scoped, and
+  structured; there is no broad database access and no mutation tool. The only public surface
+  planned is one planning endpoint (`POST /meal-plans`, contract approved in its own slice).
+- **Bounded control loop**, written as explicit Python control flow with the Anthropic SDK (no
+  agent framework unless that becomes genuinely hard to maintain): a finite maximum number of
+  steps, bounded context, a bounded number of recipes or candidates sent to the model, bounded
+  output, no background execution, no recursive or multiple agents, no web access. The concrete
+  limits are set in the implementation slice.
+- **Deterministic validation** of every proposed plan: recipes exist, servings are valid,
+  inventory is sufficient meal after meal, projected nutrition comes from deterministic
+  calculation, and hard planning constraints hold. An invalid plan is never returned as valid.
+- **Deterministic baseline and fallback.** A non-AI planner solves the same problem. It is both
+  the comparison point for evaluating AI and the result returned when the AI fails (provider
+  error, timeout, malformed output, invalid tool request, step limit) or its plan stays invalid
+  after the one correction attempt.
+
+### Configuration and secrets
+
+- The model is explicit configuration, not hard-coded, so evaluations can compare configurations
+  (baseline vs. a lower-cost model vs. a more capable one) on the same scenarios. No model is
+  chosen as the default before evaluation.
+- The Anthropic API key is server-side only: read from the environment, never committed, never
+  sent to the frontend.
+- Claude being unavailable must not break the application: existing recommendations and every
+  other feature keep working without it.
+
+### Cost, latency, and token observability
+
+- Every AI planning run records evaluation metadata: provider, model, input/output (and total,
+  if provided) tokens, model calls, tool calls/steps, end-to-end and model latency, validation
+  result, whether a correction was needed, whether the fallback was used, and estimated cost.
+- Raw token usage is authoritative; estimated cost is derived from it, so it can be recomputed
+  when prices change. Prices live in one place, keyed by provider and model (input and output
+  price per million tokens), labeled as evaluation estimates. Product behavior never depends on
+  a price.
+- Keep it simple: structured local results (e.g. JSON/JSONL) for evaluation; no analytics or
+  tracing services, metrics infrastructure, or new database table unless a later slice shows one
+  is necessary. Never log secrets; do not store full prompts or unnecessary personal data.
+
+### Not used
+
+LangChain, LangGraph, or other agent frameworks; vector databases or embeddings; long-term AI
+memory; multi-agent systems; queues, background workers, or Redis; autonomous writes. Any of these
+needs a concrete requirement and the developer's explicit approval.
 
 ## Code Layout
 

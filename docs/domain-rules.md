@@ -181,6 +181,8 @@ Enjoyment and repetition:
 
 ## AI Trust Boundary
 
+Recipe generation (a possible later capability):
+
 - Claude may later generate optional candidate meals.
 - AI generation is explicitly user-triggered.
 - Saved meals should work without Claude.
@@ -189,8 +191,24 @@ Enjoyment and repetition:
   ingredients. These must be identified as estimates.
 - When an AI recipe is saved, its ingredients are normalized and trusted macros are recalculated
   deterministically.
-- Claude does NOT own:
-  - persisted nutrition truth;
-  - inventory calculations;
-  - freshness calculations;
-  - final deterministic recommendation ranking.
+
+Meal planning:
+
+- AI meal planning is explicitly user-triggered.
+- An AI plan selects and sequences FridgeFit's existing recipes; it never invents recipes,
+  ingredients, or nutrition values.
+- Planning never changes product state: no inventory, meal history, ratings, recipes,
+  ingredients, or goals. A planned meal becomes a logged meal only when the user confirms it
+  through normal meal confirmation, with its usual deterministic rules.
+- Every AI plan is validated deterministically before it is shown as valid. Invalid AI output is
+  never treated as authoritative; the user receives a valid plan or a deterministic one instead.
+- Planning without Claude must remain possible: the deterministic planner and the rest of
+  FridgeFit work when Claude is unavailable.
+
+Claude does NOT own:
+
+- persisted nutrition truth;
+- inventory calculations;
+- freshness calculations;
+- final deterministic recommendation ranking;
+- whether a meal plan is feasible.
