@@ -12,11 +12,12 @@ codebase that can be explained end to end.
 
 ## Status
 
-FridgeFit is a **single-user HTTP API** (FastAPI, SQLite) with a React demo frontend.
-Implemented:
+FridgeFit is a **single-user HTTP API** (FastAPI; SQLite locally, PostgreSQL when deployed) with a
+React demo frontend. **Live demo: <https://fridgefit-3f2a.onrender.com>** (public and shared; see
+[Deployment](#deployment)). Implemented:
 
 - **Persistence**: SQLAlchemy models for ingredients, inventory batches, recipes, meal history,
-  nutrition goals, and meal feedback, on SQLite.
+  nutrition goals, and meal feedback; the schema is built and evolved by Alembic migrations.
 - **Core domain logic**: recipe macros, remaining daily macros, inventory aggregation,
   first-expire-first-out (FEFO) consumption, and atomic meal confirmation.
 - **Recommendations**: recipes ranked by availability, freshness, macro fit, and enjoyment, with
@@ -25,8 +26,10 @@ Implemented:
   confirm meals (with optional idempotency keys for safe retries), and rate them.
 - **Demo frontend**: a dashboard that shows ranked recommendations and why they rank, logs meals,
   handles inventory shortfalls, and rates meals, all through the API.
+- **Deployment**: the frontend, API, and PostgreSQL database run on Render, defined in
+  `render.yaml`.
 
-Not built yet: authentication, nutrition-data and Claude integrations, and deployment. See
+Not built yet: authentication, and nutrition-data and Claude integrations. See
 [`docs/current-milestone.md`](docs/current-milestone.md) for exactly what is implemented and what
 comes next.
 
@@ -133,6 +136,100 @@ consumption, serving scaling); each "Log meal" sends an `Idempotency-Key`, so a 
 can never log a meal twice; and each request runs in its own database transaction, so a failed
 write changes nothing. To reset, run the seed script again.
 
+## Deployment
+
+**Live demo: <https://fridgefit-3f2a.onrender.com>** (API docs:
+<https://fridgefit-api.onrender.com/docs>). It is a **public, shared demo with no login**: anyone
+with the link can log and rate meals. After a period without traffic the free API sleeps, so the
+first load can take up to a minute; the dashboard shows **Offline** until then ("Try again").
+The free database expires on 2026-11-23 (see [Free-tier limits](#free-tier-limits)).
+
+```text
+Browser
+  │  HTTPS
+  ▼
+fridgefit        Render static site: the React build from frontend/, served from a CDN
+  │  HTTPS; CORS allows only this site's origin
+  ▼
+fridgefit-api    Render web service: FastAPI on Uvicorn, Python 3.12
+  │  Render's private network (both in Virginia)
+  ▼
+fridgefit-db     Render PostgreSQL 16: outlives API restarts and redeploys
+```
+
+Locally nothing changes: with no `DATABASE_URL`, the API, migrations, and seed script use the
+SQLite file `fridgefit.db`, and the tests use SQLite unless `TEST_DATABASE_URL` is set.
+
+### Configuration
+
+Everything is declared in [`render.yaml`](render.yaml), a Render Blueprint. No secrets are
+committed: Render links `DATABASE_URL` from the database itself.
+
+| Variable | Service | Purpose |
+|---|---|---|
+| `DATABASE_URL` | API | The database. Unset locally means `sqlite:///fridgefit.db`; a `postgres://` or `postgresql://` URL is pointed at the psycopg 3 driver. |
+| `FRONTEND_ORIGIN` | API | The one browser origin CORS allows. Unset locally means the Vite dev origins; `*` is refused at startup. |
+| `TZ` | API | `America/New_York`. Stored times and "today" are the user's local time; Render's clock is UTC. |
+| `PORT` | API | Set by Render; Uvicorn binds to it. |
+| `PYTHON_VERSION` | API | `3.12`, as tested in CI. |
+| `VITE_API_BASE_URL` | Static site | The API's URL, baked into the JavaScript at build time (public). |
+| `NODE_VERSION` | Static site | `22`, as in CI. |
+
+### How a change reaches production
+
+1. A pull request merges into `main`, which only happens when CI passes.
+2. Both services auto-deploy only after CI passes on that commit ("After CI Checks Pass").
+3. The API builds with `pip install .` and starts with
+   `alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port $PORT`. Migrations run
+   first and are a no-op when the database is current; a failing migration stops the API from
+   starting. Render marks the deploy live only once `/health` returns 200.
+4. The static site builds with `npm ci && npm run build` and publishes `frontend/dist`.
+
+A schema change is a model edit plus a reviewed migration
+(`.venv/bin/alembic revision --autogenerate -m "..."`, then read and fix the generated file).
+`tests/test_migrations.py` fails if the models and migrations disagree. Production applies the
+migration on the next deploy.
+
+### Demo data in production
+
+Loaded once, from a developer machine, with the database's **External Database URL** (Render
+dashboard → `fridgefit-db` → Connect). Keep the URL out of files and shell history: type the
+first line, copy the URL in Render *last*, then press Enter, so `pbpaste` reads the URL.
+
+```bash
+DB_URL=$(pbpaste)
+DATABASE_URL="$DB_URL" .venv/bin/python scripts/seed_demo.py --insert-only
+unset DB_URL
+```
+
+`--insert-only` writes only to a database at the latest migration with every table empty, and
+names the database it checked when it refuses. The default reset refuses anything but SQLite, so
+it cannot wipe production.
+
+### Health, failures, and restarts
+
+Verified on Render, or locally against PostgreSQL where noted:
+
+- `/health` runs `SELECT 1`: 200 only when the API can reach the database. Render's health check
+  uses it.
+- Database unreachable (locally): `/health` and data endpoints return 500, and the logs show the
+  `OperationalError`. Once the database is back, requests succeed without restarting the API.
+- Database restarted between requests (locally): no request fails; pooled connections are checked
+  before use (`pool_pre_ping`) and replaced if dead.
+- API restart or redeploy (Render): data persists, and no migration re-runs.
+- Render's Logs tab for `fridgefit-api` shows the build, migrations, startup, every request line,
+  and full tracebacks for errors.
+
+### Free-tier limits
+
+- The API sleeps after a period without traffic; the next request waits while it wakes. The
+  static site does not sleep.
+- The free database (created 2026-10-24) expires on **2026-11-23** and is deleted 14 days later.
+  It has no backups. The planned rebuild after it is gone (not yet exercised): create a new
+  database from the Blueprint, redeploy the API (its start command migrates the new database),
+  then load the demo data again with `--insert-only`.
+- There is no authentication: the demo's data is shared by everyone who opens it.
+
 ## API
 
 | Endpoint | Purpose |
@@ -153,6 +250,7 @@ Dates are `YYYY-MM-DD` and default to today; datetimes are local time without a 
 
 ```text
 alembic/            database migrations (alembic.ini configures them)
+render.yaml         Render Blueprint: static site, API web service, PostgreSQL database
 app/
 ├── errors.py       shared InvalidInputError
 ├── persistence/    database setup, enums, SQLAlchemy models
