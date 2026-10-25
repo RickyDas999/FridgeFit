@@ -53,6 +53,8 @@ not a feature milestone.
    meal-confirmation writes and idempotent replay, was exercised. Architecture:
    `docs/architecture.md` › Environments and Deployment; operations: README › Deployment.
 
+Milestone 6 slices:
+
 | Slice | Scope | Status |
 |---|---|---|
 | 0 | Milestone activation and architecture documentation | Implemented |
@@ -72,8 +74,59 @@ without restarting the API); README › Deployment; `AGENTS.md` updated for SQLi
 PostgreSQL in production. Audit on 2026-10-25: every item of the milestone's definition of done
 checked against CI, the repository, and the live deployment.
 
-**No milestone is active.** The next one has not been chosen. Do not start new feature work until
-the developer approves the next milestone and its scope.
+**Active milestone: 7 — Guardrailed AI Meal Planning.** Slices land one at a time, each only after
+the developer authorizes it; nothing below is implemented unless marked so. The durable decisions
+are in `docs/architecture.md` › AI Meal Planning and `docs/domain-rules.md` › AI Trust Boundary.
+
+**Problem.** Recommendations answer "what single recipe should I make now?", scoring one recipe at
+a time. Milestone 7 addresses a different question: given what is in the fridge, what has been
+eaten, the nutrition left for the day, what should be used soon, and the user's constraints,
+plan the next several meals. That is sequential: each chosen meal changes the inventory and
+nutrition state the next choice should see.
+
+**Why AI, and how it is judged.** The deterministic engine stays the right tool for ranking one
+meal. AI is introduced only where it may add value: planning several steps, combining hard
+constraints with softer natural-language preferences, deciding which state to inspect, and
+explaining tradeoffs. A deterministic baseline planner solves the same problem so the AI can be
+measured against it on plan validity, constraint compliance, planning quality, latency, and
+cost. If the AI does not beat the baseline or otherwise add clear value, the repository will say
+so.
+
+**Scope.**
+
+- Claude selects, sequences, and explains meals from FridgeFit's **existing recipes**; it never
+  invents recipes or nutrition values.
+- Planning is user-triggered and **read-only**. Meals are still logged only through the existing
+  confirmation flow.
+- One public capability, conceptually `POST /meal-plans`; its contract is approved in Slice 7.
+  Internal tools are in-process Python calls, never public endpoints.
+- A bounded control loop with one correction attempt, deterministic validation of every plan,
+  and the deterministic plan as fallback. Step limits and other bounds are set in Slice 4.
+- Every AI run records provider, model, token usage, model and tool calls, latency, validation,
+  correction and fallback outcomes, and estimated cost. Raw tokens are authoritative; prices live
+  in one place and are labeled as estimates.
+- The model comes from configuration. No default is chosen before evaluation.
+- Out of scope: self-service kitchen setup (see Intentionally Unimplemented), AI recipe
+  generation, and any agent framework, embeddings, memory, multi-agent design, queue, or write
+  tool.
+
+Milestone 7 slices:
+
+| Slice | Scope | Status |
+|---|---|---|
+| 0 | Milestone activation and AI architecture documentation | Implemented |
+| 1 | Deterministic multi-meal planning baseline: simulate each chosen meal, no database writes, reuse existing calculations | Not started |
+| 2 | Planning evaluation harness: reproducible scenarios and metrics (feasibility, constraints, macro deviation, expiring-food use, diversity) | Not started |
+| 3 | Read-only AI tool boundary: a few narrow, structured, in-process tools; no mutation or broad database access | Not started |
+| 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Not started |
+| 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Not started |
+| 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Not started |
+| 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Not started |
+| 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
+| 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
+
+Milestone 7 is complete only after the deployed planning workflow has been exercised end to end,
+and it claims AI improves planning only if the evaluation supports that.
 
 ## Known Follow-ups
 
