@@ -72,7 +72,9 @@ def get_engine(database_url: str):
     Returns:
         A configured SQLAlchemy Engine instance.
     """
-    return create_engine(database_url)
+    # A pooled connection can die while idle (e.g. the database restarted). Pre-ping checks it
+    # with a tiny query before each use and reconnects, instead of failing that request.
+    return create_engine(database_url, pool_pre_ping=True)
 
 
 def get_session_factory(engine):
