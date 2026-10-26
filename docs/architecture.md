@@ -31,8 +31,10 @@ Concurrent writes are not currently a meaningful concern.
   Deployment), through the psycopg 3 driver
 - Alembic for schema migrations of persistent databases
 - FastAPI for the V1 HTTP API
-- Pydantic for HTTP request and response schemas, and for the typed, validated results of the
-  planner evaluation harness (`app/evaluation/results.py`)
+- Pydantic for HTTP request and response schemas, for the typed, validated results of the
+  planner evaluation harness (`app/evaluation/results.py`), and for the AI planning tools' inputs
+  and outputs (`app/application/planning_tools.py`), where each tool's input schema is generated
+  from its input model
 - React + TypeScript + Vite for the demo frontend (a Node.js toolchain confined to `frontend/`)
 - pytest
 - Ruff for linting, pinned to an exact version and configured in `pyproject.toml`

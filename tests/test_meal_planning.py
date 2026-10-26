@@ -8,9 +8,9 @@ from app.application.meal_planning import get_meal_plan
 from app.domain.enjoyment import RatingSummary
 from app.domain.meal_planning import (
     SimulatedBatch,
-    _tie_break_key,
     plan_meals,
     plan_violations,
+    ranking_key,
     simulate_meal,
 )
 from app.domain.nutrition_state import RemainingMacros
@@ -336,7 +336,7 @@ def test_tie_break_order_is_score_then_rated_then_average_then_id():
             candidate(4, 0.9),
             candidate(0, 0.5),
         ],
-        key=_tie_break_key,
+        key=ranking_key,
     )
 
     assert [c.recipe.id for c in ordered] == [4, 3, 2, 0, 1]

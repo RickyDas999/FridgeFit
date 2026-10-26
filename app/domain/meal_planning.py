@@ -105,11 +105,7 @@ def plan_meals(
             is negative, ``servings_per_meal`` is not positive, or ``as_of`` is not a calendar
             date.
     """
-    if isinstance(meal_count, bool) or not isinstance(meal_count, int) or meal_count < 1:
-        raise InvalidInputError(f"meal_count must be a positive whole number, got {meal_count!r}")
-    if max_prep_minutes is not None and max_prep_minutes < 0:
-        raise InvalidInputError(f"max_prep_minutes must not be negative, got {max_prep_minutes}")
-    validate_servings(servings_per_meal)
+    validate_plan_request(meal_count, max_prep_minutes, servings_per_meal)
 
     candidates = [
         recipe for recipe in recipes
@@ -127,7 +123,7 @@ def plan_meals(
         )
         if not ranked:
             break
-        chosen = min(ranked, key=_tie_break_key)
+        chosen = min(ranked, key=ranking_key)
 
         simulation = simulate_meal(
             chosen.recipe, simulated_batches, remaining, servings_per_meal
@@ -152,7 +148,28 @@ def plan_meals(
     )
 
 
-def _tie_break_key(recommendation: Recommendation) -> tuple:
+def validate_plan_request(
+    meal_count: int, max_prep_minutes: int | None, servings_per_meal: float
+) -> None:
+    """Check a planning request's numbers, as every planner and planning tool requires them.
+
+    Args:
+        meal_count: How many meals to plan.
+        max_prep_minutes: The prep-time limit, or None for no limit.
+        servings_per_meal: Servings in every planned meal.
+
+    Raises:
+        InvalidInputError: If ``meal_count`` is not a positive whole number, ``max_prep_minutes``
+            is negative, or ``servings_per_meal`` is not positive.
+    """
+    if isinstance(meal_count, bool) or not isinstance(meal_count, int) or meal_count < 1:
+        raise InvalidInputError(f"meal_count must be a positive whole number, got {meal_count!r}")
+    if max_prep_minutes is not None and max_prep_minutes < 0:
+        raise InvalidInputError(f"max_prep_minutes must not be negative, got {max_prep_minutes}")
+    validate_servings(servings_per_meal)
+
+
+def ranking_key(recommendation: Recommendation) -> tuple:
     """Order recommendations best-first: score, then rated, then average rating, then lowest id.
 
     Args:
