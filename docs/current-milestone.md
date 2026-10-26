@@ -116,7 +116,7 @@ Milestone 7 slices:
 |---|---|---|
 | 0 | Milestone activation and AI architecture documentation | Implemented |
 | 1 | Deterministic multi-meal planning baseline: simulate each chosen meal, no database writes, reuse existing calculations | Implemented |
-| 2 | Planning evaluation harness: reproducible scenarios and metrics (feasibility, constraints, macro deviation, expiring-food use, diversity) | Not started |
+| 2 | Planning evaluation harness: reproducible scenarios and metrics (feasibility, constraints, macro deviation, expiring-food use, diversity) | Implemented |
 | 3 | Read-only AI tool boundary: a few narrow, structured, in-process tools; no mutation or broad database access | Not started |
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Not started |
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Not started |
@@ -249,7 +249,8 @@ writes nothing. Decisions approved for it:
 - Because every step ranks against the simulated inventory, **availability and expiry urgency
   are recalculated** after each meal: urgent stock a planned meal uses up stops driving urgency.
 - **Partially available recipes may be planned.** They draw only what is on hand; their
-  `consumed` quantities and macros reflect that, and their `shortfalls` are reported.
+  `consumed` quantities (per ingredient), `batch_draws` (per batch), and macros reflect that,
+  and their `shortfalls` are reported.
 - **Macros guide and are reported, never enforced.** With a nutrition goal, each meal's macros
   come off the remaining amounts, so the next step's macro fit uses them; each meal reports
   `remaining_after` and the plan `remaining_at_end`. Without a goal these are None.
@@ -263,6 +264,43 @@ writes nothing. Decisions approved for it:
 `app/application/meal_planning.py`: `get_meal_plan(session, as_of, meal_count,
 max_prep_minutes=None)` loads the inputs with `load_recommendation_inputs`, copies the batches into
 `SimulatedBatch` values, and calls `plan_meals`. Read-only; no HTTP endpoint yet (Slice 7).
+
+### Planner evaluation (`app/evaluation/`, Milestone 7 Slice 2)
+
+Measures planners on fixed scenarios, before any AI exists, so later configurations are compared
+on the same inputs. Not used by the API.
+
+- `scenarios.py`: six in-memory scenarios built from one catalog of 10 ingredients and 6 recipes,
+  with explicit ids and a fixed date (`SCENARIO_DATE`, 2026-03-10), so runs are reproducible and
+  need no database: `well-stocked`, `short-inventory`, `expiring-today`, `macros-nearly-used`,
+  `tight-prep-limit`, `high-protein-preference`. Each holds stock, a daily goal (2200 kcal,
+  160 g protein, 220 g carbs, 70 g fat), what was eaten already, ratings, the request (meal count,
+  prep limit), and an optional soft preference with a machine-checkable rubric
+  (`MinPlannedMacro`, `ExcludeRecipe`).
+- `metrics.py`: `score_plan(scenario, plan)` reads only the scenario and the returned plan, so any
+  planner can be scored the same way. Metrics:
+  - hard-constraint violations: more meals than requested, repeats, unknown recipes, over the
+    prep limit;
+  - completeness (meals planned vs. requested) and inventory shortfalls per meal;
+  - macros, directional like macro fit: signed end-of-day remaining per macro; calories, carbs,
+    and fat **over** the goal; protein **short** of it, and protein beyond 1.5× the goal
+    (`PROTEIN_ACCEPTABLE_EXCESS`);
+  - expiring food: of the batches due within `EXPIRING_SOON_DAYS` (expired stock excluded), how
+    many the plan uses up and the mean share used;
+  - soft-preference rubric checks (pass/fail with the measured value).
+
+  `evaluate_baseline()` runs `plan_meals` on every scenario and returns an `EvaluationRun`.
+- `results.py`: Pydantic models (immutable, finite numbers, no unknown fields, ranges such as
+  counts ≥ 0) for each scenario's result and the run summary.
+- `scripts/evaluate_planner.py` writes a run as JSON to `evaluation-results/` (git-ignored) and
+  prints a summary: `.venv/bin/python scripts/evaluate_planner.py`.
+
+Baseline on 2026-10-25: 6/6 plans complete and hard-constraint compliant; 5/6 without shortfalls
+(`short-inventory` plans one partial meal); `macros-nearly-used` ends 306 kcal over the goal
+(greedy weighs macro fit at 0.2 of the score); `expiring-today` uses 29% of the expiring stock;
+protein ends 50–100 g short in every scenario (one serving per meal); `high-protein-preference`
+plans 74 g of protein and fails its "planned protein >= 90 g" check (the baseline ignores the
+preference text) while passing "no Bean burrito" by chance.
 
 ### Recommendations (`app/domain/`)
 
@@ -571,7 +609,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-287 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+300 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
