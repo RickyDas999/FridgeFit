@@ -371,12 +371,14 @@ Implementation behavior worth knowing:
   (filtered by `consumed_at` in the query) and returns the applicable goal and remaining macros
   (`select_applicable_goal`, `calculate_remaining_macros`). Used by `GET /nutrition-state`;
   read-only.
-- `recommendations.py`: `get_recommendations(session, as_of)` loads recipes, batches with stock,
+- `recommendations.py`: `get_recommendations(session, as_of)` passes the result of
+  `load_recommendation_inputs(session, as_of)` to `recommend_recipes`. The loader returns a
+  `RecommendationInputs` tuple, reusable by other workflows: recipes, batches with stock,
   remaining macros (via `get_nutrition_state`), each recipe's rating average and count
   (`AVG`/`COUNT ... GROUP BY recipe_id`, manual meals excluded, `AVG` cast to float so
   PostgreSQL's NUMERIC does not arrive as `Decimal`), the recent-frequency window's meals, and
-  each recipe's last-eaten date (`MAX(consumed_at) ... GROUP BY recipe_id`), then calls
-  `recommend_recipes`. Neither meal history nor ratings are loaded in full. Read-only.
+  each recipe's last-eaten date (`MAX(consumed_at) ... GROUP BY recipe_id`). Neither meal history
+  nor ratings are loaded in full. Read-only.
 - `meals.py`: `confirm_recipe_meal(session, recipe, ...)` returns the existing MealLog (with
   `created=False`) when the idempotency key was already confirmed; otherwise calls
   `confirm_meal`, which writes the key in its own atomic commit. If that commit fails with an

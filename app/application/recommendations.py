@@ -1,10 +1,12 @@
 from datetime import date, datetime, time, timedelta
+from typing import NamedTuple
 
 from sqlalchemy import Float, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.application.nutrition import get_nutrition_state
 from app.domain.enjoyment import RatingSummary
+from app.domain.nutrition_state import RemainingMacros
 from app.domain.recent_frequency import recent_window_start
 from app.domain.recommendations import Recommendation, recommend_recipes
 from app.persistence.models import (
@@ -16,12 +18,19 @@ from app.persistence.models import (
 )
 
 
+class RecommendationInputs(NamedTuple):
+    """Everything ``recommend_recipes`` needs for one calendar day, loaded from the database."""
+
+    recipes: list[Recipe]
+    batches: list[InventoryBatch]
+    remaining: RemainingMacros | None
+    rating_summaries: dict[int, RatingSummary]
+    recent_meal_logs: list[MealLog]
+    last_eaten_by_recipe: dict[int, date]
+
+
 def get_recommendations(session: Session, as_of: date) -> list[Recommendation]:
     """Load what the recommender needs for one calendar day and rank the recipes.
-
-    Meal history and ratings are never loaded in full: only the recent-frequency window's meals,
-    each recipe's last-eaten date, and each recipe's rating average and count (grouped queries)
-    are read.
 
     Args:
         session: An open database session; nothing is written.
@@ -29,6 +38,35 @@ def get_recommendations(session: Session, as_of: date) -> list[Recommendation]:
 
     Returns:
         Eligible recipes as Recommendations, highest score first.
+
+    Raises:
+        InvalidInputError: If ``as_of`` is a datetime rather than a calendar date.
+    """
+    inputs = load_recommendation_inputs(session, as_of)
+    return recommend_recipes(
+        inputs.recipes,
+        inputs.batches,
+        as_of,
+        inputs.remaining,
+        inputs.rating_summaries,
+        inputs.recent_meal_logs,
+        inputs.last_eaten_by_recipe,
+    )
+
+
+def load_recommendation_inputs(session: Session, as_of: date) -> RecommendationInputs:
+    """Load the recipes, stock, remaining macros, and rating and history summaries for a day.
+
+    Meal history and ratings are never loaded in full: only the recent-frequency window's meals,
+    each recipe's last-eaten date, and each recipe's rating average and count (grouped queries)
+    are read.
+
+    Args:
+        session: An open database session; nothing is written.
+        as_of: The calendar day the inputs describe.
+
+    Returns:
+        The loaded inputs. ``remaining`` is None when no nutrition goal is in effect.
 
     Raises:
         InvalidInputError: If ``as_of`` is a datetime rather than a calendar date.
@@ -78,12 +116,11 @@ def get_recommendations(session: Session, as_of: date) -> list[Recommendation]:
     )
     last_eaten_by_recipe = {recipe_id: eaten_at.date() for recipe_id, eaten_at in last_eaten_rows}
 
-    return recommend_recipes(
-        recipes,
-        batches,
-        as_of,
-        remaining,
-        rating_summaries,
-        recent_meal_logs,
-        last_eaten_by_recipe,
+    return RecommendationInputs(
+        recipes=list(recipes),
+        batches=list(batches),
+        remaining=remaining,
+        rating_summaries=rating_summaries,
+        recent_meal_logs=list(recent_meal_logs),
+        last_eaten_by_recipe=last_eaten_by_recipe,
     )
