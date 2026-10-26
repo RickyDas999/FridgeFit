@@ -228,3 +228,41 @@ def simulate_meal(
         batches_after=[batch for batch in after if batch.quantity_remaining > 0],
     )
 
+
+
+def plan_violations(
+    recipes: Sequence[Recipe],
+    known_recipe_ids: set[int],
+    meal_count: int,
+    max_prep_minutes: int | None,
+) -> list[str]:
+    """List every hard planning constraint a sequence of meals breaks; empty means it complies.
+
+    The constraints: no more meals than requested, only known recipes, no recipe twice, and none
+    over the prep-time limit. Whoever proposed the sequence, the rules are the same.
+
+    Args:
+        recipes: The planned recipes, in order.
+        known_recipe_ids: Ids of the kitchen's recipes.
+        meal_count: How many meals were requested.
+        max_prep_minutes: The prep-time limit, or None for no limit.
+
+    Returns:
+        One readable message per violation, in plan order.
+    """
+    violations = []
+    if len(recipes) > meal_count:
+        violations.append(f"{len(recipes)} meals planned, {meal_count} requested")
+    seen = set()
+    for recipe in recipes:
+        if recipe.id not in known_recipe_ids:
+            violations.append(f"{recipe.name!r} is not one of the kitchen's recipes")
+        if recipe.id in seen:
+            violations.append(f"{recipe.name!r} is planned more than once")
+        seen.add(recipe.id)
+        if max_prep_minutes is not None and recipe.prep_minutes > max_prep_minutes:
+            violations.append(
+                f"{recipe.name!r} takes {recipe.prep_minutes} min, "
+                f"over the {max_prep_minutes}-min limit"
+            )
+    return violations

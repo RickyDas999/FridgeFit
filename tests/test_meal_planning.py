@@ -6,7 +6,13 @@ from sqlalchemy import func, select
 
 from app.application.meal_planning import get_meal_plan
 from app.domain.enjoyment import RatingSummary
-from app.domain.meal_planning import SimulatedBatch, _tie_break_key, plan_meals, simulate_meal
+from app.domain.meal_planning import (
+    SimulatedBatch,
+    _tie_break_key,
+    plan_meals,
+    plan_violations,
+    simulate_meal,
+)
 from app.domain.nutrition_state import RemainingMacros
 from app.domain.recommendations import recommend_recipes
 from app.errors import InvalidInputError
@@ -375,6 +381,21 @@ def test_servings_per_meal_must_be_positive(servings):
         plan([], [], 1, servings=servings)
 
     assert plan([], [], 1, servings=1.5).servings_per_meal == 1.5
+
+
+def test_plan_violations_check_any_sequence_of_recipes(session):
+    """Count, repeats, and prep limit are checked on a plain recipe sequence; none means valid."""
+    chicken = add_ingredient(session, "Chicken")
+    quick = add_recipe(session, "Quick", (chicken, 100, PRIMARY), prep_minutes=10)
+    slow = add_recipe(session, "Slow", (chicken, 100, PRIMARY), prep_minutes=40)
+    known = {quick.id, slow.id}
+
+    assert plan_violations([quick, slow], known, meal_count=2, max_prep_minutes=None) == []
+    assert plan_violations([quick, quick, slow], known, meal_count=2, max_prep_minutes=30) == [
+        "3 meals planned, 2 requested",
+        "'Quick' is planned more than once",
+        "'Slow' takes 40 min, over the 30-min limit",
+    ]
 
 
 def test_a_negative_prep_limit_is_rejected():
