@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from app.application.meal_planning import get_meal_plan
 from app.domain.enjoyment import RatingSummary
-from app.domain.meal_planning import SimulatedBatch, _tie_break_key, plan_meals
+from app.domain.meal_planning import SimulatedBatch, _tie_break_key, plan_meals, simulate_meal
 from app.domain.nutrition_state import RemainingMacros
 from app.domain.recommendations import recommend_recipes
 from app.errors import InvalidInputError
@@ -193,6 +193,31 @@ def test_batch_draws_list_only_the_batches_a_meal_draws_from(session):
     meal = plan([bowl], [later, soon, stock(rice, 500, batch_id=3)], 1).meals[0]
 
     assert meal.batch_draws == {1: 100, 2: 50}
+
+
+def test_simulating_a_meal_is_pure_and_returns_the_inventory_afterwards(session):
+    """simulate_meal leaves its input batches alone and drops batches it empties."""
+    chicken, rice = add_ingredient(session, "Chicken"), add_ingredient(session, "Rice")
+    bowl = add_recipe(session, "Bowl", (chicken, 100, PRIMARY), (rice, 50, SUPPORTING))
+    batches = [stock(chicken, 100), stock(rice, 500)]
+
+    simulation = simulate_meal(bowl, batches, None, 1)
+
+    assert batches == [stock(chicken, 100), stock(rice, 500)]
+    assert simulation.batches_after == [stock(rice, 450)]
+    assert simulation.consumed == {chicken.id: 100, rice.id: 50}
+
+
+def test_any_recipe_can_be_simulated_even_one_the_recommender_would_exclude(session):
+    """With both primary ingredients missing, the recipe is ineligible to rank but simulates."""
+    chicken, rice = add_ingredient(session, "Chicken"), add_ingredient(session, "Rice")
+    bowl = add_recipe(session, "Bowl", (chicken, 100, PRIMARY), (rice, 100, PRIMARY))
+
+    simulation = simulate_meal(bowl, [], None, 1)
+
+    assert recommend_recipes([bowl], [], AS_OF, None, {}, [], {}) == []
+    assert simulation.shortfalls == {chicken.id: (100, 0), rice.id: (100, 0)}
+    assert simulation.macros.calories == 0
 
 
 def test_partially_available_recipes_use_only_what_is_on_hand(session):
