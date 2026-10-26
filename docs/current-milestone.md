@@ -115,7 +115,7 @@ Milestone 7 slices:
 | Slice | Scope | Status |
 |---|---|---|
 | 0 | Milestone activation and AI architecture documentation | Implemented |
-| 1 | Deterministic multi-meal planning baseline: simulate each chosen meal, no database writes, reuse existing calculations | Not started |
+| 1 | Deterministic multi-meal planning baseline: simulate each chosen meal, no database writes, reuse existing calculations | Implemented |
 | 2 | Planning evaluation harness: reproducible scenarios and metrics (feasibility, constraints, macro deviation, expiring-food use, diversity) | Not started |
 | 3 | Read-only AI tool boundary: a few narrow, structured, in-process tools; no mutation or broad database access | Not started |
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Not started |
@@ -231,6 +231,38 @@ Implementation behavior worth knowing:
   - An optional `idempotency_key` is stored on the MealLog in the same commit. `confirm_meal`
     does not check for an existing key; that lookup belongs to the caller. A rejected
     confirmation writes nothing, so its key stays unused.
+
+### Deterministic meal planning (`app/domain/meal_planning.py`, Milestone 7 Slice 1)
+
+`plan_meals(recipes, batches, as_of, remaining_macros, rating_summaries, meal_count,
+max_prep_minutes=None)` is the non-AI baseline planner. It is pure: it reads in-memory copies and
+writes nothing. Decisions approved for it:
+
+- Plans the rest of one day: `meal_count` meals (a positive whole number), each **1 serving**,
+  optionally only recipes with `prep_minutes <= max_prep_minutes`.
+- **Greedy.** Each step ranks the recipes not yet planned with `recommend_recipes` against the
+  simulated state, takes the best, and simulates eating it. No recipe repeats within the plan.
+- **Simulation on plain copies.** Inventory is `SimulatedBatch` values (`id`, `ingredient_id`,
+  `quantity_remaining`, `use_by_date`, `purchased_at`); each planned meal produces new copies
+  with its FEFO draws removed (via `plan_recipe_consumption`, the same rule meal confirmation
+  uses). Database objects are never touched.
+- Because every step ranks against the simulated inventory, **availability and expiry urgency
+  are recalculated** after each meal: urgent stock a planned meal uses up stops driving urgency.
+- **Partially available recipes may be planned.** They draw only what is on hand; their
+  `consumed` quantities and macros reflect that, and their `shortfalls` are reported.
+- **Macros guide and are reported, never enforced.** With a nutrition goal, each meal's macros
+  come off the remaining amounts, so the next step's macro fit uses them; each meal reports
+  `remaining_after` and the plan `remaining_at_end`. Without a goal these are None.
+- **Ties** (equal combined score): a rated recipe before an unrated one, then the higher average
+  rating, then the lower recipe id. Because enjoyment is `(average - 1) / 4` and unrated recipes
+  score 0.5, the average-rating step only decides when other components offset a different
+  average exactly, which is rare in practice.
+- The plan may hold fewer meals than requested (`meals_requested` keeps the request) when no
+  eligible recipe is left.
+
+`app/application/meal_planning.py`: `get_meal_plan(session, as_of, meal_count,
+max_prep_minutes=None)` loads the inputs with `load_recommendation_inputs`, copies the batches into
+`SimulatedBatch` values, and calls `plan_meals`. Read-only; no HTTP endpoint yet (Slice 7).
 
 ### Recommendations (`app/domain/`)
 
@@ -539,7 +571,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-271 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+287 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
