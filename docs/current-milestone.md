@@ -251,7 +251,10 @@ reads in-memory copies and writes nothing. Decisions approved for it:
 - **Simulation on plain copies.** Inventory is `SimulatedBatch` values (`id`, `ingredient_id`,
   `quantity_remaining`, `use_by_date`, `purchased_at`); each planned meal produces new copies
   with its FEFO draws removed (via `plan_recipe_consumption`, the same rule meal confirmation
-  uses). Database objects are never touched.
+  uses). Database objects are never touched. The step is public as
+  `simulate_meal(recipe, batches, remaining, servings)`, returning a `MealSimulation` (consumed,
+  batch draws, macros, shortfalls, remaining after, inventory after); it simulates any recipe,
+  including one the recommender would exclude, so later callers can replay a chosen sequence.
 - Because every step ranks against the simulated inventory, **availability and expiry urgency
   are recalculated** after each meal: urgent stock a planned meal uses up stops driving urgency.
 - **Partially available recipes may be planned.** They draw only what is on hand; their
@@ -617,7 +620,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-306 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+308 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:

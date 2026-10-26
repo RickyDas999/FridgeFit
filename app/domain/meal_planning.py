@@ -36,6 +36,21 @@ class PlannedMeal(NamedTuple):
     remaining_after: RemainingMacros | None
 
 
+class MealSimulation(NamedTuple):
+    """What eating some servings of one recipe would use, supply, and leave behind."""
+
+    # ingredient_id -> quantity drawn (only what is on hand).
+    consumed: dict[int, float]
+    # batch id -> quantity drawn from that batch (FEFO).
+    batch_draws: dict[int, float]
+    macros: RecipeMacros
+    # ingredient_id -> (quantity_needed, quantity_available) for ingredients it is short of.
+    shortfalls: dict[int, tuple[float, float]]
+    remaining_after: RemainingMacros | None
+    # The inventory afterwards: new copies with the draws taken out, emptied batches dropped.
+    batches_after: list[SimulatedBatch]
+
+
 class MealPlan(NamedTuple):
     """Planned meals for the rest of a day; it may hold fewer meals than requested."""
 
@@ -114,11 +129,19 @@ def plan_meals(
             break
         chosen = min(ranked, key=_tie_break_key)
 
-        meal, simulated_batches = _simulate_meal(
-            chosen, simulated_batches, remaining, servings_per_meal
+        simulation = simulate_meal(
+            chosen.recipe, simulated_batches, remaining, servings_per_meal
         )
-        meals.append(meal)
-        remaining = meal.remaining_after
+        meals.append(PlannedMeal(
+            recommendation=chosen,
+            consumed=simulation.consumed,
+            batch_draws=simulation.batch_draws,
+            macros=simulation.macros,
+            shortfalls=simulation.shortfalls,
+            remaining_after=simulation.remaining_after,
+        ))
+        simulated_batches = simulation.batches_after
+        remaining = simulation.remaining_after
         candidates = [recipe for recipe in candidates if recipe.id != chosen.recipe.id]
 
     return MealPlan(
@@ -147,29 +170,32 @@ def _tie_break_key(recommendation: Recommendation) -> tuple:
     )
 
 
-def _simulate_meal(
-    recommendation: Recommendation,
+def simulate_meal(
+    recipe: Recipe,
     batches: Sequence[SimulatedBatch],
     remaining: RemainingMacros | None,
     servings: float,
-) -> tuple[PlannedMeal, list[SimulatedBatch]]:
-    """Work out what eating some servings of a recommended recipe would use and leave.
+) -> MealSimulation:
+    """Work out what eating some servings of a recipe would use, supply, and leave.
 
-    Draws follow FEFO, exactly as confirming the meal would.
+    Draws follow FEFO, exactly as confirming the meal would; a short ingredient uses only what is
+    on hand. Pure: the given batches are not changed.
 
     Args:
-        recommendation: The chosen recipe and the scores that chose it.
+        recipe: The recipe eaten, with ingredients and nutrition data loaded.
         batches: The simulated inventory before this meal.
         remaining: The remaining macros before this meal, or None without a goal.
-        servings: Servings eaten.
+        servings: Servings eaten; any positive number.
 
     Returns:
-        The planned meal, and new batch copies with its draws taken out (emptied ones dropped).
+        The simulation, including the inventory afterwards.
+
+    Raises:
+        InvalidInputError: If the recipe is invalid or ``servings`` is not positive.
     """
     batches_by_ingredient = defaultdict(list)
     for batch in batches:
         batches_by_ingredient[batch.ingredient_id].append(batch)
-    recipe = recommendation.recipe
     consumption = plan_recipe_consumption(recipe, servings, batches_by_ingredient)
     macros = calculate_recipe_macros(recipe, quantity_overrides=consumption.fulfilled_quantities)
 
@@ -193,13 +219,12 @@ def _simulate_meal(
         batch._replace(quantity_remaining=batch.quantity_remaining - taken.get(batch.id, 0.0))
         for batch in batches
     ]
-    meal = PlannedMeal(
-        recommendation=recommendation,
+    return MealSimulation(
         consumed=dict(consumed),
         batch_draws=dict(taken),
         macros=macros,
         shortfalls=consumption.shortfalls,
         remaining_after=remaining_after,
+        batches_after=[batch for batch in after if batch.quantity_remaining > 0],
     )
-    return meal, [batch for batch in after if batch.quantity_remaining > 0]
 
