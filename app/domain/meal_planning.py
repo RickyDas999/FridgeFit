@@ -128,14 +128,7 @@ def plan_meals(
         simulation = simulate_meal(
             chosen.recipe, simulated_batches, remaining, servings_per_meal
         )
-        meals.append(PlannedMeal(
-            recommendation=chosen,
-            consumed=simulation.consumed,
-            batch_draws=simulation.batch_draws,
-            macros=simulation.macros,
-            shortfalls=simulation.shortfalls,
-            remaining_after=simulation.remaining_after,
-        ))
+        meals.append(_planned_meal(chosen, simulation))
         simulated_batches = simulation.batches_after
         remaining = simulation.remaining_after
         candidates = [recipe for recipe in candidates if recipe.id != chosen.recipe.id]
@@ -146,6 +139,92 @@ def plan_meals(
         servings_per_meal=servings_per_meal,
         remaining_at_end=remaining,
     )
+
+
+class ReplayedPlan(NamedTuple):
+    """A proposed recipe sequence replayed deterministically, and what is wrong with it."""
+
+    # The plan as FridgeFit computes it; None if a recipe could not be replayed (ineligible).
+    plan: MealPlan | None
+    # Every reason the sequence is not a valid plan; empty means valid.
+    problems: list[str]
+
+
+def replay_plan(
+    chosen: Sequence[Recipe],
+    recipes: Sequence[Recipe],
+    batches: Sequence[SimulatedBatch],
+    as_of: date,
+    remaining_macros: RemainingMacros | None,
+    rating_summaries: dict[int, RatingSummary],
+    meal_count: int,
+    max_prep_minutes: int | None = None,
+    servings_per_meal: float = 1,
+) -> ReplayedPlan:
+    """Replay a proposed sequence of recipes and decide whether it is a valid plan.
+
+    Whoever proposed the sequence, every number in the result comes from the same simulation the
+    deterministic planner uses, and the same rules apply: no hard-constraint violation
+    (``plan_violations``), every recipe eligible at its point in the sequence (no more than one
+    primary ingredient missing), and no fewer meals than requested while an eligible recipe
+    within the prep limit remains. Shortages are allowed and reported, as for the baseline.
+
+    Args:
+        chosen: The proposed recipes, in eating order.
+        recipes: Every recipe in the kitchen.
+        batches: In-memory copies of the inventory batches.
+        as_of: The calendar day being planned.
+        remaining_macros: The day's remaining macros, or None without a goal.
+        rating_summaries: Mapping of ``recipe_id`` to its rating average and count.
+        meal_count: How many meals were requested.
+        max_prep_minutes: The prep-time limit, or None for no limit.
+        servings_per_meal: Servings in every planned meal.
+
+    Returns:
+        The replayed plan (None if a recipe was ineligible) and every problem found.
+
+    Raises:
+        InvalidInputError: If the request's numbers are invalid.
+    """
+    validate_plan_request(meal_count, max_prep_minutes, servings_per_meal)
+    problems = plan_violations(chosen, {r.id for r in recipes}, meal_count, max_prep_minutes)
+    simulated_batches = list(batches)
+    remaining = remaining_macros
+    meals = []
+    for recipe in chosen:
+        # Ranking a single recipe gives its scores, or nothing if it is ineligible here.
+        ranked = recommend_recipes(
+            [recipe], simulated_batches, as_of, remaining, rating_summaries, [], {}
+        )
+        if not ranked:
+            problems.append(
+                f"{recipe.name!r} is ineligible at that point in the plan: more than one "
+                "primary ingredient is missing"
+            )
+            return ReplayedPlan(plan=None, problems=problems)
+        simulation = simulate_meal(recipe, simulated_batches, remaining, servings_per_meal)
+        meals.append(_planned_meal(ranked[0], simulation))
+        simulated_batches = simulation.batches_after
+        remaining = simulation.remaining_after
+
+    if len(meals) < meal_count:
+        planned = {recipe.id for recipe in chosen}
+        left = [
+            r for r in recipes
+            if r.id not in planned
+            and (max_prep_minutes is None or r.prep_minutes <= max_prep_minutes)
+        ]
+        if recommend_recipes(left, simulated_batches, as_of, remaining, rating_summaries, [], {}):
+            problems.append(
+                f"only {len(meals)} of {meal_count} meals planned while eligible recipes remain"
+            )
+    plan = MealPlan(
+        meals=meals,
+        meals_requested=meal_count,
+        servings_per_meal=servings_per_meal,
+        remaining_at_end=remaining,
+    )
+    return ReplayedPlan(plan=plan, problems=problems)
 
 
 def validate_plan_request(
@@ -167,6 +246,26 @@ def validate_plan_request(
     if max_prep_minutes is not None and max_prep_minutes < 0:
         raise InvalidInputError(f"max_prep_minutes must not be negative, got {max_prep_minutes}")
     validate_servings(servings_per_meal)
+
+
+def _planned_meal(recommendation: Recommendation, simulation: MealSimulation) -> PlannedMeal:
+    """Combine why a recipe was chosen with what eating it does.
+
+    Args:
+        recommendation: The recipe's ranking at that point in the plan.
+        simulation: Its simulated meal.
+
+    Returns:
+        The PlannedMeal.
+    """
+    return PlannedMeal(
+        recommendation=recommendation,
+        consumed=simulation.consumed,
+        batch_draws=simulation.batch_draws,
+        macros=simulation.macros,
+        shortfalls=simulation.shortfalls,
+        remaining_after=simulation.remaining_after,
+    )
 
 
 def ranking_key(recommendation: Recommendation) -> tuple:

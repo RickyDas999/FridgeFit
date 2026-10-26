@@ -119,7 +119,7 @@ Milestone 7 slices:
 | 2 | Planning evaluation harness: reproducible scenarios and metrics (feasibility, constraints, macro deviation, expiring-food use, diversity) | Implemented |
 | 3 | Read-only AI tool boundary: a few narrow, structured, in-process tools; no mutation or broad database access | Implemented |
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Implemented |
-| 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Not started |
+| 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | In progress |
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Not started |
 | 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Not started |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
@@ -271,6 +271,14 @@ reads in-memory copies and writes nothing. Decisions approved for it:
   eligible recipe is left.
 - `validate_plan_request(meal_count, max_prep_minutes, servings_per_meal)` checks a request's
   numbers; `ranking_key` is the tie-break order (public so other callers rank identically).
+- `replay_plan(chosen, recipes, batches, as_of, remaining, ratings, meal_count, max_prep_minutes,
+  servings_per_meal)` (Slice 5) replays a proposed recipe sequence through the same ranking and
+  simulation and returns a `ReplayedPlan`: the `MealPlan` FridgeFit computes for it and every
+  problem. A sequence is valid only when it has no `plan_violations`, every recipe is eligible
+  at its point in the sequence (otherwise `plan` is None), and it has no fewer meals than
+  requested while an eligible recipe within the prep limit remains. Shortages are allowed and
+  reported, as for the baseline. Replaying the baseline's own choices reproduces the baseline's
+  plan exactly in every evaluation scenario (tested).
 - `plan_violations(recipes, known_recipe_ids, meal_count, max_prep_minutes)` lists the hard
   constraints any sequence of recipes breaks (more meals than requested, unknown recipes,
   repeats, over the prep limit), whoever proposed it. The evaluation's
@@ -688,7 +696,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-343 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+355 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
