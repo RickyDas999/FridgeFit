@@ -256,9 +256,9 @@ def build_scenarios() -> list[Scenario]:
             build_batches(FULL_STOCK),
             meal_count=2,
             preference="I'm training today: high protein please, and no burrito.",
-            # 90 g: above what ignoring the request gives, reachable by choosing high-protein
-            # recipes, so the check separates following the preference from ignoring it.
-            rubric=[MinPlannedMacro("protein", 90), ExcludeRecipe("Bean burrito")],
+            # 85 g: the most two single servings can supply is 88.8 g (chicken bowl + salmon
+            # plate), so only following the request passes; ignoring it gives 74 g.
+            rubric=[MinPlannedMacro("protein", 85), ExcludeRecipe("Bean burrito")],
         ),
         _scenario(
             "bigger-meals",
