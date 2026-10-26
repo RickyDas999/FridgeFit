@@ -121,7 +121,7 @@ Milestone 7 slices:
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Implemented |
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Implemented |
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Implemented |
-| 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | In progress (endpoint, daily AI cap, and deployment configuration implemented; deployed verification next) |
+| 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Implemented |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
 | 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
 
@@ -716,6 +716,24 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 - On the free plan a sleeping API makes the first load wait (the page itself loads at once,
   since static sites do not sleep); the dashboard shows its loading or "Offline" state until the
   API wakes.
+
+### Deployed AI meal planning (Milestone 7 Slice 7)
+
+Verified by the developer against `https://fridgefit-api.onrender.com` on 2026-10-26 with
+`POST /meal-plans {"meal_count": 2}` on the demo data:
+
+- Before `ANTHROPIC_API_KEY` was set: 200, `source` `baseline`, `fallback_reason`
+  `ai_disabled` (Chicken & broccoli rice bowl, then Chicken pepper stir fry).
+- After the key was added in the Render dashboard, two requests: both 200, `source` `ai`,
+  `fallback_reason` null, the same two recipes in the same order as the baseline. One request's
+  server log line: `outcome=submitted`, `claude-haiku-5-5` at effort low, 3 model calls,
+  2 tool calls, 0 rejected plans, 8,777 input and 485 output tokens, 8.0 s, estimated
+  $0.00112, in line with Slice 6's $0.0013 per Haiku plan.
+- The explanations' figures are close but not exact: 893 kcal (FridgeFit: 893.25) and 98 or 99 g
+  protein (FridgeFit: 97.9 g); one has a typo. Explanation text is model-written and never
+  checked; every number in `meals` and `remaining_at_end` is FridgeFit's.
+- The daily cap (`ai_limit`) was not exercised in production, since proving it would take 50
+  real calls; tests cover it.
 
 ### Demo seed (`scripts/seed_demo.py`)
 
