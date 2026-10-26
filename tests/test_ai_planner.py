@@ -118,7 +118,7 @@ def test_a_plan_is_submitted_after_inspecting_with_tools():
         "provider": "anthropic", "model": "claude-test-model", "effort": "low",
         "input_tokens": 500, "output_tokens": 100, "cache_read_input_tokens": 0,
         "cache_creation_input_tokens": 0, "model_calls": 3, "tool_calls": 2,
-        "invalid_tool_calls": 0, "model_seconds": 0, "total_seconds": 0,
+        "invalid_tool_calls": 0, "rejected_plans": 0, "model_seconds": 0, "total_seconds": 0,
     }
 
 
@@ -172,6 +172,38 @@ def test_an_invalid_submission_is_returned_to_the_model_to_fix():
     assert error["is_error"] is True
     assert "recipe_ids: List should have at least 1 item" in json.loads(error["content"])["error"]
     assert (attempt.outcome, attempt.usage.invalid_tool_calls) == ("submitted", 1)
+
+
+def test_a_rejected_plan_can_be_corrected_once_in_the_same_conversation():
+    """An invalid plan gets its problems back; the corrected plan is accepted."""
+    repeat = tool_use("submit_plan", {"recipe_ids": [2, 2], "explanation": "Two omelettes."})
+    client = FakeClient(reply(repeat), reply(SUBMIT))
+
+    attempt = run_ai_planner(snapshot(), CONFIG, client)
+
+    rejection = client.requests[1]["messages"][2]["content"][0]
+    assert rejection["is_error"] is True
+    assert json.loads(rejection["content"])["error"] == (
+        "Plan rejected by FridgeFit's checks: 'Spinach omelette' is planned more than once. "
+        "Fix these and call submit_plan again."
+    )
+    assert (attempt.outcome, attempt.recipe_ids) == ("submitted", [2, 4])
+    assert attempt.usage.rejected_plans == 1
+
+
+def test_a_second_invalid_plan_ends_the_attempt():
+    """After the one allowed correction, another invalid plan is not retried."""
+    short = tool_use("submit_plan", {"recipe_ids": [2], "explanation": "Just one."})
+    unknown = tool_use("submit_plan", {"recipe_ids": [2, 99], "explanation": "Mystery."})
+    client = FakeClient(reply(short), reply(unknown), reply(SUBMIT))
+
+    attempt = run_ai_planner(snapshot(), CONFIG, client)
+
+    assert attempt.outcome == "invalid_plan"
+    assert attempt.recipe_ids == [2, 99]
+    assert attempt.detail == "unknown recipe id(s): 99"
+    assert (attempt.usage.rejected_plans, attempt.usage.model_calls) == (2, 2)
+    assert len(client.script) == 1
 
 
 def test_the_loop_stops_at_the_model_call_limit():

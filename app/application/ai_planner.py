@@ -16,8 +16,11 @@ from pydantic import Field, StrictInt, ValidationError
 
 from app.application.planning_tools import (
     PlanningSnapshot,
+    ToolError,
     ToolModel,
+    ToolResult,
     invalid_input_result,
+    proposal_problems,
     run_tool,
     tool_definitions,
 )
@@ -49,6 +52,8 @@ class PlannerConfig(NamedTuple):
     max_model_calls: int = 6
     max_tokens: int = 4096
     time_budget_seconds: float = 60.0
+    # Rejected plans Claude may fix in the same conversation before the attempt fails.
+    max_corrections: int = 1
 
 
 class AttemptUsage(NamedTuple):
@@ -64,6 +69,7 @@ class AttemptUsage(NamedTuple):
     model_calls: int
     tool_calls: int
     invalid_tool_calls: int
+    rejected_plans: int
     model_seconds: float
     total_seconds: float
 
@@ -71,9 +77,10 @@ class AttemptUsage(NamedTuple):
 class AIPlanAttempt(NamedTuple):
     """How a planning attempt ended, the proposal if there is one, and its usage.
 
-    ``outcome`` is one of: ``submitted`` (a proposal arrived), ``refusal``, ``truncated`` (a
-    reply hit ``max_tokens``), ``no_plan`` (Claude stopped without submitting), ``step_limit``,
-    ``time_limit``, or ``provider_error``. The proposal is not validated here.
+    ``outcome`` is one of: ``submitted`` (a plan that passed deterministic validation),
+    ``invalid_plan`` (still invalid after the allowed corrections), ``refusal``, ``truncated``
+    (a reply hit ``max_tokens``), ``no_plan`` (Claude stopped without submitting),
+    ``step_limit``, ``time_limit``, or ``provider_error``. ``recipe_ids`` holds the last proposal.
     """
 
     outcome: str
@@ -148,6 +155,10 @@ def run_ai_planner(
 ) -> AIPlanAttempt:
     """Let Claude inspect the snapshot through the tools and propose a plan, within hard limits.
 
+    Each submitted plan is checked with ``proposal_problems``. A rejected plan's tool result
+    lists every problem and Claude may resubmit, up to ``max_corrections`` times, within the same
+    call and time limits; another rejection ends the attempt as ``invalid_plan``.
+
     Args:
         snapshot: The planning request's data; the tools read only this.
         config: The model and the loop's limits.
@@ -162,7 +173,7 @@ def run_ai_planner(
     tools = [{**t, "strict": True} for t in [*tool_definitions(), SUBMIT_PLAN_TOOL]]
     messages = [{"role": "user", "content": _request_text(snapshot)}]
     tally = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0,
-             "calls": 0, "tools": 0, "invalid": 0, "model_seconds": 0.0}
+             "calls": 0, "tools": 0, "invalid": 0, "rejected": 0, "model_seconds": 0.0}
 
     def finish(outcome, detail=None, recipe_ids=None, explanation=None):
         """Close the attempt with its outcome and the usage so far.
@@ -183,6 +194,7 @@ def run_ai_planner(
             cache_creation_input_tokens=tally["cache_creation"],
             model_calls=tally["calls"], tool_calls=tally["tools"],
             invalid_tool_calls=tally["invalid"],
+            rejected_plans=tally["rejected"],
             model_seconds=round(tally["model_seconds"], 3),
             total_seconds=round(clock() - started, 3),
         )
@@ -225,15 +237,28 @@ def run_ai_planner(
         # Append the reply unchanged (thinking blocks included) before the tool results.
         messages.append({"role": "assistant", "content": response.content})
         results = []
-        submitted = None
+        accepted = None
         for block in tool_uses:
             if block.name == "submit_plan":
                 try:
-                    submitted = SubmitPlanInput.model_validate(block.input)
-                    content, is_error = '{"status": "received"}', False
+                    proposal = SubmitPlanInput.model_validate(block.input)
                 except ValidationError as exc:
                     tally["invalid"] += 1
                     content, is_error = invalid_input_result("submit_plan", exc)
+                else:
+                    problems = proposal_problems(snapshot, proposal.recipe_ids)
+                    if not problems:
+                        accepted = proposal
+                        content, is_error = '{"status": "accepted"}', False
+                    elif tally["rejected"] < config.max_corrections:
+                        tally["rejected"] += 1
+                        content, is_error = _rejection(problems)
+                    else:
+                        tally["rejected"] += 1
+                        return finish(
+                            "invalid_plan", "; ".join(problems),
+                            recipe_ids=proposal.recipe_ids, explanation=proposal.explanation,
+                        )
             else:
                 tally["tools"] += 1
                 result = run_tool(snapshot, block.name, block.input)
@@ -243,13 +268,29 @@ def run_ai_planner(
                 "type": "tool_result", "tool_use_id": block.id,
                 "content": content, "is_error": is_error,
             })
-        if submitted is not None:
+        if accepted is not None:
             return finish(
-                "submitted", recipe_ids=submitted.recipe_ids, explanation=submitted.explanation
+                "submitted", recipe_ids=accepted.recipe_ids, explanation=accepted.explanation
             )
         messages.append({"role": "user", "content": results})
 
     return finish("step_limit", f"no plan after {config.max_model_calls} model calls")
+
+
+def _rejection(problems: list[str]) -> ToolResult:
+    """Tell Claude why its plan was rejected, so it can fix it once.
+
+    Args:
+        problems: Every reason the plan is invalid.
+
+    Returns:
+        An error ToolResult listing the problems.
+    """
+    listed = "; ".join(problems)
+    message = (
+        f"Plan rejected by FridgeFit's checks: {listed}. Fix these and call submit_plan again."
+    )
+    return ToolResult(ToolError(error=message).model_dump_json(), is_error=True)
 
 
 def _request_text(snapshot: PlanningSnapshot) -> str:
