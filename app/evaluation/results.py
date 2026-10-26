@@ -68,8 +68,28 @@ class PreferenceResult(EvaluationModel):
     checks: list[RubricCheck]
 
 
+class AttemptResult(EvaluationModel):
+    """How one AI planning attempt ran and what it cost; absent for the baseline."""
+
+    source: str
+    outcome: str
+    fallback_reason: str | None
+    rejected_plans: int = Field(ge=0)
+    model_calls: int = Field(ge=0)
+    tool_calls: int = Field(ge=0)
+    invalid_tool_calls: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    cache_read_input_tokens: int = Field(ge=0)
+    cache_creation_input_tokens: int = Field(ge=0)
+    model_seconds: float = Field(ge=0)
+    total_seconds: float = Field(ge=0)
+    # Derived from the raw tokens and the evaluation price table; None for an unpriced model.
+    estimated_cost_usd: float | None = Field(ge=0)
+
+
 class ScenarioResult(EvaluationModel):
-    """Every metric for one planner on one scenario."""
+    """Every metric for one planner on one scenario (and, for AI runs, one repeat)."""
 
     scenario_id: str
     description: str
@@ -82,6 +102,23 @@ class ScenarioResult(EvaluationModel):
     macros: MacroResult | None
     expiring_food: ExpiringFoodResult
     preference: PreferenceResult
+    run: int = Field(default=1, ge=1)
+    ai: AttemptResult | None = None
+
+
+class AISummary(EvaluationModel):
+    """How the AI attempts of one configuration went, across scenarios and repeats."""
+
+    attempts: int = Field(ge=0)
+    ai_plans_used: int = Field(ge=0)
+    fallbacks: int = Field(ge=0)
+    corrected_plans_used: int = Field(ge=0)
+    invalid_tool_calls: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    mean_total_seconds: float | None = Field(ge=0)
+    max_total_seconds: float | None = Field(ge=0)
+    estimated_cost_usd: float | None = Field(ge=0)
 
 
 class RunSummary(EvaluationModel):
@@ -96,6 +133,7 @@ class RunSummary(EvaluationModel):
     mean_expiring_share_used: float | None = Field(ge=0, le=1)
     rubric_checks_passed: int = Field(ge=0)
     rubric_checks: int = Field(ge=0)
+    ai: AISummary | None = None
 
 
 class EvaluationRun(EvaluationModel):
@@ -106,3 +144,5 @@ class EvaluationRun(EvaluationModel):
     scenario_date: date
     results: list[ScenarioResult]
     summary: RunSummary
+    # Why the run ended before every scenario and repeat ran (e.g. the spending cap), if it did.
+    stopped_early: str | None = None
