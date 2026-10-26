@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from types import SimpleNamespace
 
 import anthropic
@@ -6,7 +7,9 @@ import httpx2
 import pytest
 
 from app.application.ai_planner import (
+    DailyLimit,
     PlannerConfig,
+    daily_limit_from_env,
     make_client,
     plan_day,
     planner_config_from_env,
@@ -390,3 +393,31 @@ def test_a_failed_ai_attempt_falls_back_to_the_baseline(script, reason_start):
     assert result.plan == baseline_plan(snap)
     assert result.explanation is None
     assert result.attempt is not None
+
+
+def test_the_daily_limit_refuses_past_the_cap_and_resets_the_next_day():
+    """The cap counts attempts per day and starts again on a new day."""
+    limit = DailyLimit(2)
+    today, tomorrow = date(2026, 10, 26), date(2026, 10, 27)
+    assert [limit.try_take(today) for _ in range(3)] == [True, True, False]
+    assert limit.try_take(tomorrow) is True
+
+
+@pytest.mark.parametrize("raw, expected", [(None, None), ("", None), ("0", 0), (" 50 ", 50)])
+def test_the_daily_limit_is_read_from_the_environment(monkeypatch, raw, expected):
+    """Unset or empty means no limit; 0 allows no AI attempts at all."""
+    if raw is None:
+        monkeypatch.delenv("PLANNER_DAILY_LIMIT", raising=False)
+    else:
+        monkeypatch.setenv("PLANNER_DAILY_LIMIT", raw)
+    limit = daily_limit_from_env()
+    assert limit.limit == expected
+    assert limit.try_take(date(2026, 10, 26)) is (expected != 0)
+
+
+@pytest.mark.parametrize("raw", ["-1", "ten", "2.5"])
+def test_an_invalid_daily_limit_is_rejected(monkeypatch, raw):
+    """A daily limit that is not a whole number of zero or more stops startup."""
+    monkeypatch.setenv("PLANNER_DAILY_LIMIT", raw)
+    with pytest.raises(ValueError, match="PLANNER_DAILY_LIMIT"):
+        daily_limit_from_env()

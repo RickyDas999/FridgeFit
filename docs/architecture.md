@@ -83,9 +83,9 @@ PostgreSQL              (Render-managed)
   and never on every deploy; a restart or redeploy preserves database state.
 - Configuration lives in a few environment variables (`DATABASE_URL`, `FRONTEND_ORIGIN`, `TZ`
   for the single user's timezone, the platform's `PORT`, and for AI planning `PLANNER_MODEL`,
-  `PLANNER_EFFORT`, and the secret `ANTHROPIC_API_KEY`), read directly; no settings
-  framework unless the settings outgrow that. Secrets such as database credentials are never
-  committed.
+  `PLANNER_EFFORT`, `PLANNER_DAILY_LIMIT`, and the secret `ANTHROPIC_API_KEY`), read directly;
+  no settings framework unless the settings outgrow that. Secrets such as database credentials
+  are never committed.
 - Provider-specific configuration stays at the deployment boundary. Application code depends on
   `DATABASE_URL`, the frontend origin, and the port and start command, not on Render APIs.
 - No Docker unless native Render Python deployment cannot meet a concrete need.

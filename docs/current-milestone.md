@@ -121,7 +121,7 @@ Milestone 7 slices:
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Implemented |
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Implemented |
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Implemented |
-| 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | In progress (endpoint implemented; daily AI cap and deployment next) |
+| 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | In progress (endpoint and daily AI cap implemented; deployment next) |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
 | 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
 
@@ -427,7 +427,11 @@ raises for model or provider problems. It writes nothing.
 - **Configuration.** `planner_config_from_env()`: `PLANNER_MODEL` with no default (unset means
   AI planning is off), `PLANNER_EFFORT` defaulting to `low` (one of low, medium, high, xhigh,
   max). `make_client()` uses the server's `ANTHROPIC_API_KEY` (no key, no client) with SDK
-  retries off, so the time budget bounds every attempt.
+  retries off, so the time budget bounds every attempt. `daily_limit_from_env()` reads
+  `PLANNER_DAILY_LIMIT` (a whole number; unset means no limit, 0 means no AI attempts) into a
+  `DailyLimit`: an in-memory count per server-local day, guarded by a lock because sync routes
+  run in a thread pool. It resets at midnight and on restart, and each process has its own
+  count. `baseline_result(snapshot, reason, attempt)` returns the baseline `PlanningResult`.
 - **Limits** (`PlannerConfig`): at most 6 model calls, `max_tokens` 4096 per call, 60 s for the
   whole loop; each call's timeout is the time left. Adaptive thinking with the configured effort;
   no sampling parameters.
@@ -522,10 +526,11 @@ raises for model or provider problems. It writes nothing.
   `get_database_url()`, so the module-level `app` uses `DATABASE_URL` or the local SQLite file.
   Run locally with `.venv/bin/uvicorn app.api.main:app --reload`.
 - `create_app` also reads the AI planner's settings once (`planner_config_from_env()`,
-  `make_client()`) into `app.state.planner_config` and `app.state.planner_client` (a bad
-  `PLANNER_EFFORT` stops startup; either being None turns AI planning off), and calls
+  `make_client()`, `daily_limit_from_env()`) into `app.state.planner_config`,
+  `app.state.planner_client`, and `app.state.planner_limit` (a bad `PLANNER_EFFORT` or
+  `PLANNER_DAILY_LIMIT` stops startup; a None config or client turns AI planning off), and calls
   `logging.basicConfig(level=INFO)` so FridgeFit's own log lines reach the server log next to
-  Uvicorn's. Tests replace the two `app.state` values with a scripted fake client.
+  Uvicorn's. Tests replace these `app.state` values with a scripted fake client.
 - Startup (lifespan) does not create tables; the schema comes from migrations. Shutdown disposes
   the engine.
 - CORS (`CORSMiddleware`) allows the origins from `get_frontend_origins()`: exactly
@@ -602,7 +607,9 @@ raises for model or provider problems. It writes nothing.
     outcome, never from its text: null when the AI plan is used, `ai_disabled` (no model or key
     configured), `ai_plan_invalid` (still invalid after the one correction), `ai_failed` (any
     other outcome: provider error, refusal, truncation, no plan, step or time limit), and
-    `ai_limit` (reserved for the daily cap). Provider error text, tokens, latency, and estimated
+    `ai_limit` (today's AI attempts reached `PLANNER_DAILY_LIMIT`; Claude is not called).
+    Only requests that would call Claude count, and the day is the server's, not `as_of`, so
+    changing `as_of` does not reset the cap. Provider error text, tokens, latency, and estimated
     cost (`estimate_cost`) go to one INFO server log line per request, never to the response.
     The route is a plain `def`, so FastAPI runs the blocking Claude loop (up to 60 s) in its
     thread pool instead of stalling other requests. No authentication: anyone who can reach the
@@ -793,7 +800,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-385 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+395 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
