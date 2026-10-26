@@ -120,7 +120,7 @@ Milestone 7 slices:
 | 3 | Read-only AI tool boundary: a few narrow, structured, in-process tools; no mutation or broad database access | Implemented |
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Implemented |
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Implemented |
-| 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | In progress |
+| 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Implemented |
 | 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Not started |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
 | 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
@@ -343,6 +343,50 @@ protein ends 50–100 g short in every scenario (one serving per meal); `high-pr
 plans 74 g of protein and fails its "planned protein >= 85 g" check (the baseline ignores the
 preference text) while passing "no Bean burrito" by chance; `bigger-meals` ends 210 kcal under
 the calorie goal and 18 g over on protein (within the 1.5× allowance).
+
+**Live AI evaluation (Slice 6, 2026-10-26).** `--live --config claude-haiku-5-5:3 --config
+claude-sonnet-5-5:1 --config claude-opus-5-5:1`, all at effort low: 35 attempts (Haiku three
+runs per scenario, Sonnet and Opus one, chosen to fit the available API credit), estimated
+$0.48 of a $1.00 cap. The high-protein rubric bar was then 90 g; outcomes below use the
+corrected 85 g bar, derived from the saved protein totals without a re-run.
+
+- **Reliability:** 35 of 35 attempts produced a valid plan on the first submission: no
+  corrections, no fallbacks, no invalid tool calls, 3–4 model calls each. The correction and
+  fallback paths were therefore never exercised live (they are covered by fake-client tests).
+- **Plan quality against the baseline**, scored with the same metrics:
+  - `macros-nearly-used`: every model, every run planned yogurt bowl + omelette and ended
+    **64 kcal over** the calorie goal, against the baseline's 306. The one clear AI win.
+  - `high-protein-preference`: every model, every run planned chicken bowl + salmon plate,
+    **88.8 g** of protein, the most any valid plan reaches (baseline 74 g). Passes the 85 g
+    check the baseline fails; both avoid the burrito.
+  - `well-stocked`: oats + bowl + salmon, 46 g protein short (baseline 51 g). Slightly better.
+  - `short-inventory`: Haiku and Sonnet chose omelette + oats + yogurt bowl, avoiding the
+    baseline's shortfall but ending 89 g protein short (baseline 70 g); Opus chose the
+    baseline's recipes. A tradeoff, not an improvement.
+  - `expiring-today`, `tight-prep-limit`, `bigger-meals`: the same recipes as the baseline
+    (order sometimes different); expiring food used stays at 29%.
+- **Consistency (Haiku, 3 runs):** the same recipe set in all runs for 6 of 7 scenarios (order
+  varies); in `bigger-meals` one run chose oats over the salmon plate (3 g protein short).
+- **Cost and latency per attempt** (estimated from raw tokens; about 8,800–9,400 input tokens
+  each, and on average 684 output tokens for Haiku, 353 for Sonnet, 402 for Opus):
+
+  | Model | Est. cost | Mean / max time | Plans |
+  |---|---|---|---|
+  | `claude-haiku-5-5` | $0.0013 | 6.2 s / 10.6 s | Same as Sonnet in every scenario |
+  | `claude-sonnet-5-5` | $0.021 | 4.9 s / 7.5 s | Same as Haiku |
+  | `claude-opus-5-5` | $0.043 | 7.5 s / 10.9 s | Differs only in `short-inventory` |
+
+- **Recommended configuration: `PLANNER_MODEL=claude-haiku-5-5`, `PLANNER_EFFORT=low`**
+  (developer's decision). It plans like Sonnet at about 1/16 of the cost and like Opus at
+  about 1/33, with acceptable latency. The code keeps no default model; deployment sets it.
+- **What the AI adds, honestly:** a clear improvement where the greedy baseline's weighting
+  ignores the calorie budget, a measurable one when the user states a preference, a small one
+  on protein when well stocked, and a tradeoff with short stock; elsewhere it ties the
+  baseline, plus a model-written explanation.
+- **Not shown by this evaluation:** the correction and fallback paths working live; effort
+  levels other than low; scenarios beyond these seven; one run per scenario for Sonnet and
+  Opus says little about their consistency; prompt caching (no cache reads; input tokens
+  dominate cost) as a possible saving.
 
 ### AI planning tools (`app/application/planning_tools.py`, Milestone 7 Slice 3)
 
