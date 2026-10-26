@@ -173,6 +173,18 @@ def test_expiry_urgency_is_recalculated_after_each_meal(session):
     assert meal_plan.meals[1].recommendation.expiry_urgency.score == 0
 
 
+def test_batch_draws_list_only_the_batches_a_meal_draws_from(session):
+    """batch_draws holds each drawn batch's FEFO quantity and nothing for untouched stock."""
+    chicken, rice = add_ingredient(session, "Chicken"), add_ingredient(session, "Rice")
+    bowl = add_recipe(session, "Bowl", (chicken, 150, PRIMARY))
+    soon = stock(chicken, 100, use_by=AS_OF, batch_id=1)
+    later = stock(chicken, 500, use_by=date(2026, 3, 20), batch_id=2)
+
+    meal = plan([bowl], [later, soon, stock(rice, 500, batch_id=3)], 1).meals[0]
+
+    assert meal.batch_draws == {1: 100, 2: 50}
+
+
 def test_partially_available_recipes_use_only_what_is_on_hand(session):
     """A short recipe can be planned; it draws what exists and its macros reflect that."""
     chicken = add_ingredient(session, "Chicken", calories=200, protein=30)

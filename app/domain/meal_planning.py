@@ -168,8 +168,10 @@ def _simulate_meal(
         consumed[line.recipe_ingredient.ingredient_id] += line.quantity_fulfilled
         for draw in line.draws:
             taken[draw.batch.id] += draw.quantity
+    # .get, not taken[...]: indexing a defaultdict inserts a 0.0 entry for every batch, which
+    # would then show up in batch_draws as a draw from stock the meal never touched.
     after = [
-        batch._replace(quantity_remaining=batch.quantity_remaining - taken[batch.id])
+        batch._replace(quantity_remaining=batch.quantity_remaining - taken.get(batch.id, 0.0))
         for batch in batches
     ]
     meal = PlannedMeal(
