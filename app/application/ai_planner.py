@@ -1,10 +1,11 @@
-"""The bounded Claude planning loop (Milestone 7 Slice 4).
+"""AI meal planning: the bounded Claude loop and the deterministic fallback (Milestone 7).
 
 Claude inspects FridgeFit through the read-only planning tools and proposes a plan by calling
 ``submit_plan``. The loop is explicit Python control flow with hard limits on model calls, tokens,
 and time, and it never raises for model or provider problems: every attempt ends with a recorded
-outcome and its usage. Nothing here validates the proposal or writes product state; validation
-and the deterministic fallback are Slice 5.
+outcome and its usage. Every proposal is validated deterministically. ``plan_day`` returns the
+AI's plan only when it passed; otherwise it returns the deterministic baseline plan. Nothing here
+writes product state.
 """
 
 import os
@@ -21,9 +22,11 @@ from app.application.planning_tools import (
     ToolResult,
     invalid_input_result,
     proposal_problems,
+    replay_proposal,
     run_tool,
     tool_definitions,
 )
+from app.domain.meal_planning import MealPlan, plan_meals
 
 PROVIDER = "anthropic"
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
@@ -88,6 +91,21 @@ class AIPlanAttempt(NamedTuple):
     explanation: str | None
     detail: str | None
     usage: AttemptUsage
+
+
+class PlanningResult(NamedTuple):
+    """The plan to show, where it came from, and how the AI attempt went.
+
+    ``plan`` is always computed by FridgeFit: the AI's recipes replayed through the deterministic
+    simulation when ``source`` is ``ai``, otherwise the deterministic baseline plan.
+    """
+
+    plan: MealPlan
+    source: str
+    # The AI's own words about its plan; model-written, never parsed for numbers.
+    explanation: str | None
+    fallback_reason: str | None
+    attempt: AIPlanAttempt | None
 
 
 class SubmitPlanInput(ToolModel):
@@ -275,6 +293,69 @@ def run_ai_planner(
         messages.append({"role": "user", "content": results})
 
     return finish("step_limit", f"no plan after {config.max_model_calls} model calls")
+
+
+def plan_day(
+    snapshot: PlanningSnapshot,
+    config: PlannerConfig | None,
+    client,
+    clock: Callable[[], float] = time.monotonic,
+) -> PlanningResult:
+    """Plan the rest of the day with Claude when possible, and the deterministic baseline if not.
+
+    The AI's plan is used only when its attempt ends ``submitted`` and replaying it still passes
+    validation; any other outcome, or AI planning being off, returns the baseline plan with the
+    reason. Unexpected errors in FridgeFit's own code are not caught.
+
+    Args:
+        snapshot: The planning request's data.
+        config: The planner configuration, or None when ``PLANNER_MODEL`` is not set.
+        client: An Anthropic client, or None when no API key is configured.
+        clock: Seconds from a monotonic clock; injectable for tests.
+
+    Returns:
+        The PlanningResult.
+    """
+    if config is None:
+        return _baseline(snapshot, "AI planning is off: PLANNER_MODEL is not set", None)
+    if client is None:
+        return _baseline(snapshot, "AI planning is off: ANTHROPIC_API_KEY is not set", None)
+    attempt = run_ai_planner(snapshot, config, client, clock)
+    if attempt.outcome != "submitted":
+        return _baseline(snapshot, f"{attempt.outcome}: {attempt.detail}", attempt)
+    # The loop already validated this plan; replaying it again yields the numbers to return and
+    # guarantees nothing unvalidated is ever shown as valid.
+    replayed = replay_proposal(snapshot, attempt.recipe_ids)
+    if replayed.problems:
+        return _baseline(snapshot, "invalid_plan: " + "; ".join(replayed.problems), attempt)
+    return PlanningResult(replayed.plan, "ai", attempt.explanation, None, attempt)
+
+
+def _baseline(
+    snapshot: PlanningSnapshot, reason: str, attempt: AIPlanAttempt | None
+) -> PlanningResult:
+    """Fall back to the deterministic greedy plan.
+
+    Args:
+        snapshot: The planning request's data.
+        reason: Why the AI plan is not used.
+        attempt: The AI attempt, if one ran.
+
+    Returns:
+        The PlanningResult with the baseline plan.
+    """
+    request = snapshot.request
+    plan = plan_meals(
+        list(snapshot.recipes_by_id.values()),
+        snapshot.batches,
+        request.as_of,
+        snapshot.remaining,
+        snapshot.rating_summaries,
+        request.meal_count,
+        request.max_prep_minutes,
+        request.servings_per_meal,
+    )
+    return PlanningResult(plan, "baseline", None, reason, attempt)
 
 
 def _rejection(problems: list[str]) -> ToolResult:

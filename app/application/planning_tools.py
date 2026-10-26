@@ -24,6 +24,7 @@ from app.domain.enjoyment import RatingSummary
 from app.domain.expiry_urgency import EXPIRING_SOON_DAYS
 from app.domain.inventory_aggregation import aggregate_inventory_by_ingredient
 from app.domain.meal_planning import (
+    ReplayedPlan,
     SimulatedBatch,
     plan_violations,
     ranking_key,
@@ -391,11 +392,25 @@ def proposal_problems(snapshot: PlanningSnapshot, recipe_ids: list[int]) -> list
         recipe_ids: The proposed recipe ids, in eating order.
 
     Returns:
-        The problems (unknown recipe ids, or those ``replay_plan`` finds); empty means valid.
+        The problems; empty means valid.
+    """
+    return replay_proposal(snapshot, recipe_ids).problems
+
+
+def replay_proposal(snapshot: PlanningSnapshot, recipe_ids: list[int]) -> ReplayedPlan:
+    """Replay proposed recipe ids on the snapshot with ``replay_plan``.
+
+    Args:
+        snapshot: The planning request's data.
+        recipe_ids: The proposed recipe ids, in eating order.
+
+    Returns:
+        The replayed plan and its problems; unknown recipe ids are a problem with no plan.
     """
     unknown = [i for i in recipe_ids if i not in snapshot.recipes_by_id]
     if unknown:
-        return [f"unknown recipe id(s): {', '.join(str(i) for i in unknown)}"]
+        listed = ", ".join(str(i) for i in unknown)
+        return ReplayedPlan(plan=None, problems=[f"unknown recipe id(s): {listed}"])
     request = snapshot.request
     return replay_plan(
         [snapshot.recipes_by_id[i] for i in recipe_ids],
@@ -407,7 +422,7 @@ def proposal_problems(snapshot: PlanningSnapshot, recipe_ids: list[int]) -> list
         request.meal_count,
         request.max_prep_minutes,
         request.servings_per_meal,
-    ).problems
+    )
 
 
 class PlanningTool(NamedTuple):
