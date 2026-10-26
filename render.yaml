@@ -30,6 +30,18 @@ services:
       # because fridgefit.onrender.com belongs to someone else; never allow that origin.
       - key: FRONTEND_ORIGIN
         value: https://fridgefit-3f2a.onrender.com
+      # AI meal planning (POST /meal-plans): the configuration the evaluation recommended.
+      - key: PLANNER_MODEL
+        value: claude-haiku-5-5
+      - key: PLANNER_EFFORT
+        value: low
+      # The endpoint is public, so this bounds what anyone can spend per day (resets at
+      # midnight and on restart); past it, requests get the deterministic plan.
+      - key: PLANNER_DAILY_LIMIT
+        value: "50"
+      # Secret: entered in the Render dashboard, never committed. Without it AI planning is off.
+      - key: ANTHROPIC_API_KEY
+        sync: false
 
   # The React build, served as static files from Render's CDN (no region, no server process).
   - type: web

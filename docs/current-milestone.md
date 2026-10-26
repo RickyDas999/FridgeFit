@@ -121,7 +121,7 @@ Milestone 7 slices:
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Implemented |
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Implemented |
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Implemented |
-| 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | In progress (endpoint and daily AI cap implemented; deployment next) |
+| 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | In progress (endpoint, daily AI cap, and deployment configuration implemented; deployed verification next) |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
 | 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
 
@@ -661,6 +661,11 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
   linked from the database, and `FRONTEND_ORIGIN=https://fridgefit-3f2a.onrender.com`, the
   static site's exact origin (committed: it is public). Auto-deploy is set in the dashboard to
   "After CI Checks Pass".
+  AI planning (Milestone 7 Slice 7): `PLANNER_MODEL=claude-haiku-5-5` and `PLANNER_EFFORT=low`
+  (the configuration the evaluation recommended), `PLANNER_DAILY_LIMIT=50` (about $0.07 a day
+  at the measured $0.0013 per Haiku plan), and `ANTHROPIC_API_KEY` declared with
+  `sync: false`: its value is entered in the Render dashboard and never committed. Until it is
+  set, `POST /meal-plans` returns the baseline with `ai_disabled`.
 - `fridgefit` (Slice 7): static site at `https://fridgefit-3f2a.onrender.com` (Render added the
   suffix: `fridgefit.onrender.com` is an unrelated site), built from `frontend/`. Build
   `npm ci && npm run build` with `NODE_VERSION` 22 (as in CI) and
