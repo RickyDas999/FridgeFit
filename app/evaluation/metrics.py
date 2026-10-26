@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from app.domain.expiry_urgency import EXPIRING_SOON_DAYS
 from app.domain.macro_fit import PROTEIN_ACCEPTABLE_EXCESS
-from app.domain.meal_planning import MealPlan, plan_meals
+from app.domain.meal_planning import MealPlan, plan_meals, plan_violations
 from app.evaluation.results import (
     EvaluationRun,
     ExpiringFoodResult,
@@ -111,33 +111,21 @@ def score_plan(scenario: Scenario, plan: MealPlan) -> ScenarioResult:
 
 
 def hard_constraint_violations(scenario: Scenario, plan: MealPlan) -> list[str]:
-    """List every hard constraint the plan breaks; an empty list means it complies.
+    """List every hard constraint the plan breaks, using the domain's ``plan_violations``.
 
     Args:
         scenario: The scenario, holding the request and the known recipes.
         plan: The plan to check.
 
     Returns:
-        One readable message per violation.
+        One readable message per violation; an empty list means it complies.
     """
-    violations = []
-    if len(plan.meals) > scenario.meal_count:
-        violations.append(f"{len(plan.meals)} meals planned, {scenario.meal_count} requested")
-    known = {recipe.id for recipe in scenario.recipes}
-    seen = set()
-    for meal in plan.meals:
-        recipe = meal.recommendation.recipe
-        if recipe.id not in known:
-            violations.append(f"{recipe.name!r} is not one of the kitchen's recipes")
-        if recipe.id in seen:
-            violations.append(f"{recipe.name!r} is planned more than once")
-        seen.add(recipe.id)
-        limit = scenario.max_prep_minutes
-        if limit is not None and recipe.prep_minutes > limit:
-            violations.append(
-                f"{recipe.name!r} takes {recipe.prep_minutes} min, over the {limit}-min limit"
-            )
-    return violations
+    return plan_violations(
+        [meal.recommendation.recipe for meal in plan.meals],
+        {recipe.id for recipe in scenario.recipes},
+        scenario.meal_count,
+        scenario.max_prep_minutes,
+    )
 
 
 def macro_result(scenario: Scenario, plan: MealPlan) -> MacroResult | None:

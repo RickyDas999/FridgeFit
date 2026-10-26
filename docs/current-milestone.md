@@ -269,6 +269,10 @@ reads in-memory copies and writes nothing. Decisions approved for it:
   average exactly, which is rare in practice.
 - The plan may hold fewer meals than requested (`meals_requested` keeps the request) when no
   eligible recipe is left.
+- `plan_violations(recipes, known_recipe_ids, meal_count, max_prep_minutes)` lists the hard
+  constraints any sequence of recipes breaks (more meals than requested, unknown recipes,
+  repeats, over the prep limit), whoever proposed it. The evaluation's
+  `hard_constraint_violations` calls it.
 
 `app/application/meal_planning.py`: `get_meal_plan(session, as_of, meal_count,
 max_prep_minutes=None, servings_per_meal=1)` loads the inputs with `load_recommendation_inputs`,
@@ -620,7 +624,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-308 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+309 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
