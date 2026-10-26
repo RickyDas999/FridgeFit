@@ -182,6 +182,9 @@ returned plan        one bounded correction → validate again → valid, or det
   when prices change. Prices live in one place, keyed by provider and model (input and output
   price per million tokens), labeled as evaluation estimates. Product behavior never depends on
   a price.
+- In production, `POST /meal-plans` writes each request's attempt (outcome, detail, model,
+  tokens, calls, latency, estimated cost) as one INFO line to the server log; none of it is in
+  the public response, which gives only a coarse fallback code.
 - Keep it simple: structured local results (e.g. JSON/JSONL) for evaluation; no analytics or
   tracing services, metrics infrastructure, or new database table unless a later slice shows one
   is necessary. Never log secrets; do not store full prompts or unnecessary personal data.

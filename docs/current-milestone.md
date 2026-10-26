@@ -121,7 +121,7 @@ Milestone 7 slices:
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Implemented |
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Implemented |
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Implemented |
-| 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Not started |
+| 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | In progress (endpoint implemented; daily AI cap and deployment next) |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
 | 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
 
@@ -286,8 +286,8 @@ reads in-memory copies and writes nothing. Decisions approved for it:
 
 `app/application/meal_planning.py`: `get_meal_plan(session, as_of, meal_count,
 max_prep_minutes=None, servings_per_meal=1)` loads the inputs with `load_recommendation_inputs`,
-copies the batches into `SimulatedBatch` values, and calls `plan_meals`. Read-only; no HTTP
-endpoint yet (Slice 7).
+copies the batches into `SimulatedBatch` values, and calls `plan_meals`. Read-only. `POST
+/meal-plans` does not call it: that endpoint's baseline comes from `plan_day` (Slice 7).
 
 ### Planner evaluation (`app/evaluation/`, Milestone 7 Slice 2)
 
@@ -521,6 +521,11 @@ raises for model or provider problems. It writes nothing.
 - `app/api/main.py`: `create_app(database_url=None)` builds the app; without a URL it uses
   `get_database_url()`, so the module-level `app` uses `DATABASE_URL` or the local SQLite file.
   Run locally with `.venv/bin/uvicorn app.api.main:app --reload`.
+- `create_app` also reads the AI planner's settings once (`planner_config_from_env()`,
+  `make_client()`) into `app.state.planner_config` and `app.state.planner_client` (a bad
+  `PLANNER_EFFORT` stops startup; either being None turns AI planning off), and calls
+  `logging.basicConfig(level=INFO)` so FridgeFit's own log lines reach the server log next to
+  Uvicorn's. Tests replace the two `app.state` values with a scripted fake client.
 - Startup (lifespan) does not create tables; the schema comes from migrations. Shutdown disposes
   the engine.
 - CORS (`CORSMiddleware`) allows the origins from `get_frontend_origins()`: exactly
@@ -532,7 +537,7 @@ raises for model or provider problems. It writes nothing.
 - `app/api/session.py`: `get_session` gives each request its own Session, closed when the
   request ends; uncommitted changes are discarded. Routes receive it through `SessionDep`.
 - One route module per resource (`ingredients.py`, `inventory.py`, `recipes.py`, `nutrition.py`,
-  `recommendations.py`, `meals.py`), each holding its `APIRouter` and Pydantic schemas.
+  `recommendations.py`, `meals.py`, `meal_plans.py`), each holding its `APIRouter` and Pydantic schemas.
   Responses are built from ORM objects with `model_validate` (`from_attributes=True`), or field
   by field when they include derived or related values (recipe macros, recommendations, meal
   ingredients).
@@ -585,6 +590,23 @@ raises for model or provider problems. It writes nothing.
   - `POST /meal-logs/{meal_log_id}/feedback` (201): body `{"rating": 1-5}`, a strict whole
     number (`true`, `"4"`, and `4.0` → 422). Missing meal → 404; already rated → 409. Manual
     meals can be rated; their ratings count toward no recipe.
+  - `POST /meal-plans` (Milestone 7 Slice 7): plans the rest of a day and writes nothing. Body
+    (unknown fields → 422): `meal_count` 1-5 (required), `max_prep_minutes` 1-240,
+    `servings_per_meal` > 0 (default 1), `preference` (free text, at most 300 characters, given
+    to the AI planner only), `as_of` (defaults to today on the server's clock). Always 200 with
+    `source` (`ai` or `baseline`), `explanation` (the AI's text; null for the baseline),
+    `fallback_reason`, `meals` (per meal: `recipe_id`, `name`, `prep_minutes`, `servings`,
+    `ingredients_used` and `shortages` per ingredient with name and unit, `macros`,
+    `remaining_after`), and `remaining_at_end` (null without a nutrition goal). The plan comes
+    from `plan_day`. `fallback_reason` is a coarse code taken from the attempt's recorded
+    outcome, never from its text: null when the AI plan is used, `ai_disabled` (no model or key
+    configured), `ai_plan_invalid` (still invalid after the one correction), `ai_failed` (any
+    other outcome: provider error, refusal, truncation, no plan, step or time limit), and
+    `ai_limit` (reserved for the daily cap). Provider error text, tokens, latency, and estimated
+    cost (`estimate_cost`) go to one INFO server log line per request, never to the response.
+    The route is a plain `def`, so FastAPI runs the blocking Claude loop (up to 60 s) in its
+    thread pool instead of stalling other requests. No authentication: anyone who can reach the
+    API can spend AI credit, which the daily cap bounds.
 
 ### Query loading
 
@@ -771,7 +793,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-373 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+385 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
