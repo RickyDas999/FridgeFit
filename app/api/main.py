@@ -19,7 +19,11 @@ from app.api import (
     recommendations,
 )
 from app.api.session import SessionDep
-from app.application.ai_planner import make_client, planner_config_from_env
+from app.application.ai_planner import (
+    daily_limit_from_env,
+    make_client,
+    planner_config_from_env,
+)
 from app.errors import InvalidInputError
 from app.persistence.database import get_database_url, get_engine, get_session_factory
 
@@ -118,7 +122,8 @@ def create_app(database_url: str | None = None) -> FastAPI:
         The configured FastAPI application.
 
     Raises:
-        ValueError: If ``FRONTEND_ORIGIN`` is ``*`` or ``PLANNER_EFFORT`` is not a known level.
+        ValueError: If ``FRONTEND_ORIGIN`` is ``*``, ``PLANNER_EFFORT`` is not a known level, or
+            ``PLANNER_DAILY_LIMIT`` is not a whole number.
     """
     # Uvicorn only configures its own loggers; this lets FridgeFit's INFO lines (the AI planner's
     # usage and cost) reach the server log. It does nothing if logging is already configured.
@@ -128,10 +133,11 @@ def create_app(database_url: str | None = None) -> FastAPI:
     app = FastAPI(title="FridgeFit", lifespan=lifespan)
     app.state.engine = get_engine(database_url)
     app.state.session_factory = get_session_factory(app.state.engine)
-    # Read once at startup: a bad PLANNER_EFFORT stops the server instead of failing requests.
+    # Read once at startup: a bad setting stops the server instead of failing requests.
     # None for either means AI planning is off and POST /meal-plans returns the baseline plan.
     app.state.planner_config = planner_config_from_env()
     app.state.planner_client = make_client()
+    app.state.planner_limit = daily_limit_from_env()
     # Lets the frontend call the API from another origin. No credentials: V1 has no auth.
     # Idempotency-Key is a custom header, so browsers preflight requests that send it.
     app.add_middleware(

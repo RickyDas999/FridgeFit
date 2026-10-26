@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.recipes import MacrosResponse
 from app.api.session import SessionDep
-from app.application.ai_planner import PlanningResult, plan_day
+from app.application.ai_planner import PlanningResult, baseline_result, plan_day
 from app.application.planning_tools import PlanningRequest, load_planning_snapshot
 from app.domain.meal_planning import PlannedMeal
 from app.domain.nutrition_state import RemainingMacros
@@ -200,8 +200,18 @@ def create_meal_plan(
         preference=body.preference or None,
     ))
     state = request.app.state
-    result = plan_day(snapshot, state.planner_config, state.planner_client)
-    code = fallback_code(result)
+    config, client = state.planner_config, state.planner_client
+    # Only attempts that would call Claude count. The day is the server's, not the request's
+    # as_of, so changing as_of cannot get around the cap.
+    if config is not None and client is not None and not state.planner_limit.try_take(
+        date.today()
+    ):
+        limit = state.planner_limit.limit
+        result = baseline_result(snapshot, f"daily limit of {limit} AI plans reached", None)
+        code = "ai_limit"
+    else:
+        result = plan_day(snapshot, config, client)
+        code = fallback_code(result)
     log_attempt(result, code)
     plan = result.plan
     return MealPlanResponse(

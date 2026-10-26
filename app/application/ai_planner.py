@@ -9,7 +9,9 @@ writes product state.
 """
 
 import os
+import threading
 import time
+from datetime import date
 from typing import Callable, NamedTuple
 
 import anthropic
@@ -149,6 +151,64 @@ def planner_config_from_env() -> PlannerConfig | None:
         allowed = ", ".join(EFFORT_LEVELS)
         raise ValueError(f"PLANNER_EFFORT must be one of {allowed}, got {effort!r}")
     return PlannerConfig(model=model, effort=effort)
+
+
+class DailyLimit:
+    """Counts AI planning attempts per server-local calendar day and refuses past a cap.
+
+    The count lives in memory: it resets at midnight and whenever the server restarts.
+    """
+
+    # ponytail: per-process count; with several workers or instances each gets its own cap, so a
+    # shared store (e.g. a database row) would be needed before scaling out.
+
+    def __init__(self, limit: int | None):
+        """Start with nothing counted.
+
+        Args:
+            limit: Attempts allowed per day, or None for no limit.
+        """
+        self.limit = limit
+        self.day: date | None = None
+        self.count = 0
+        # Sync routes run in FastAPI's thread pool, so two requests can check the count at once.
+        self.lock = threading.Lock()
+
+    def try_take(self, today: date) -> bool:
+        """Count one attempt for today if the cap allows it.
+
+        Args:
+            today: The server's current calendar day.
+
+        Returns:
+            True if the attempt may run (and was counted), False if today's cap is reached.
+        """
+        if self.limit is None:
+            return True
+        with self.lock:
+            if today != self.day:
+                self.day, self.count = today, 0
+            if self.count >= self.limit:
+                return False
+            self.count += 1
+            return True
+
+
+def daily_limit_from_env() -> DailyLimit:
+    """Read ``PLANNER_DAILY_LIMIT``, the most AI planning attempts allowed per day.
+
+    Returns:
+        The DailyLimit; unset or empty means no limit, and 0 turns AI planning off.
+
+    Raises:
+        ValueError: If the value is not a whole number of zero or more.
+    """
+    raw = (os.environ.get("PLANNER_DAILY_LIMIT") or "").strip()
+    if not raw:
+        return DailyLimit(None)
+    if not raw.isdigit():
+        raise ValueError(f"PLANNER_DAILY_LIMIT must be a whole number >= 0, got {raw!r}")
+    return DailyLimit(int(raw))
 
 
 def make_client() -> anthropic.Anthropic | None:
@@ -317,24 +377,24 @@ def plan_day(
         The PlanningResult.
     """
     if config is None:
-        return _baseline(snapshot, "AI planning is off: PLANNER_MODEL is not set", None)
+        return baseline_result(snapshot, "AI planning is off: PLANNER_MODEL is not set", None)
     if client is None:
-        return _baseline(snapshot, "AI planning is off: ANTHROPIC_API_KEY is not set", None)
+        return baseline_result(snapshot, "AI planning is off: ANTHROPIC_API_KEY is not set", None)
     attempt = run_ai_planner(snapshot, config, client, clock)
     if attempt.outcome != "submitted":
-        return _baseline(snapshot, f"{attempt.outcome}: {attempt.detail}", attempt)
+        return baseline_result(snapshot, f"{attempt.outcome}: {attempt.detail}", attempt)
     # The loop already validated this plan; replaying it again yields the numbers to return and
     # guarantees nothing unvalidated is ever shown as valid.
     replayed = replay_proposal(snapshot, attempt.recipe_ids)
     if replayed.problems:
-        return _baseline(snapshot, "invalid_plan: " + "; ".join(replayed.problems), attempt)
+        return baseline_result(snapshot, "invalid_plan: " + "; ".join(replayed.problems), attempt)
     return PlanningResult(replayed.plan, "ai", attempt.explanation, None, attempt)
 
 
-def _baseline(
+def baseline_result(
     snapshot: PlanningSnapshot, reason: str, attempt: AIPlanAttempt | None
 ) -> PlanningResult:
-    """Fall back to the deterministic greedy plan.
+    """Return the deterministic greedy plan, with why the AI plan is not used.
 
     Args:
         snapshot: The planning request's data.

@@ -4,7 +4,7 @@ import anthropic
 import pytest
 
 from app.api.main import create_app
-from app.application.ai_planner import PlannerConfig
+from app.application.ai_planner import DailyLimit, PlannerConfig
 from tests.test_ai_planner import REQUEST, FakeClient, reply, tool_use
 from tests.test_api_recommendations import add_batch, add_ingredient, add_recipe
 
@@ -33,12 +33,13 @@ def kitchen(client):
     }
 
 
-def use_planner(app, *script):
+def use_planner(app, *script, limit=None):
     """Turn AI planning on for the app with a scripted fake client; no real API calls.
 
     Args:
         app: The FastAPI application.
         *script: The fake client's responses or errors.
+        limit: AI attempts allowed per day, or None for no limit.
 
     Returns:
         The FakeClient.
@@ -46,6 +47,7 @@ def use_planner(app, *script):
     fake = FakeClient(*script)
     app.state.planner_config = CONFIG
     app.state.planner_client = fake
+    app.state.planner_limit = DailyLimit(limit)
     return fake
 
 
@@ -147,6 +149,33 @@ def test_a_plan_still_invalid_after_the_correction_returns_ai_plan_invalid(app, 
     assert len(body["meals"]) == 2
 
 
+def test_past_the_daily_limit_the_baseline_is_returned_without_calling_claude(
+    app, client, kitchen
+):
+    """Once today's AI attempts reach the cap, requests get the baseline with ai_limit."""
+    fake = use_planner(app, submit([kitchen["beans"]]), limit=1)
+
+    first = plan(client).json()
+    # A different as_of does not reset the cap: the count is per server day.
+    second = plan(client, as_of="2026-10-12").json()
+
+    assert first["source"] == "ai"
+    assert second["source"] == "baseline"
+    assert second["fallback_reason"] == "ai_limit"
+    assert len(second["meals"]) == 1
+    assert len(fake.requests) == 1
+
+
+def test_requests_without_ai_do_not_use_up_the_daily_limit(app, client, kitchen):
+    """With AI planning off, requests are not counted against the cap."""
+    use_planner(app, submit([kitchen["beans"]]), limit=1)
+    app.state.planner_config = None
+    assert plan(client).json()["fallback_reason"] == "ai_disabled"
+
+    app.state.planner_config = CONFIG
+    assert plan(client).json()["source"] == "ai"
+
+
 @pytest.mark.parametrize("body", [
     {"meal_count": 0},
     {"meal_count": 6},
@@ -168,6 +197,8 @@ def test_the_planner_is_configured_from_the_environment(monkeypatch, empty_datab
     """create_app reads the model and key once; without a key there is no client."""
     monkeypatch.setenv("PLANNER_MODEL", "claude-haiku-5-5")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("PLANNER_DAILY_LIMIT", "50")
     app = create_app(empty_database_url)
     assert app.state.planner_config.model == "claude-haiku-5-5"
     assert app.state.planner_client is None
+    assert app.state.planner_limit.limit == 50
