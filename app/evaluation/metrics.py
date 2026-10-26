@@ -52,6 +52,7 @@ def evaluate_baseline(
                 scenario.rating_summaries,
                 scenario.meal_count,
                 scenario.max_prep_minutes,
+                scenario.servings_per_meal,
             ),
         )
         for scenario in scenarios

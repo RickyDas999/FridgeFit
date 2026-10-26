@@ -235,11 +235,17 @@ Implementation behavior worth knowing:
 ### Deterministic meal planning (`app/domain/meal_planning.py`, Milestone 7 Slice 1)
 
 `plan_meals(recipes, batches, as_of, remaining_macros, rating_summaries, meal_count,
-max_prep_minutes=None)` is the non-AI baseline planner. It is pure: it reads in-memory copies and
-writes nothing. Decisions approved for it:
+max_prep_minutes=None, servings_per_meal=1)` is the non-AI baseline planner. It is pure: it
+reads in-memory copies and writes nothing. Decisions approved for it:
 
-- Plans the rest of one day: `meal_count` meals (a positive whole number), each **1 serving**,
-  optionally only recipes with `prep_minutes <= max_prep_minutes`.
+- Plans the rest of one day: `meal_count` meals (a positive whole number), each
+  `servings_per_meal` servings (any positive number, as in meal confirmation; default 1, the
+  original Slice 1 decision), optionally only recipes with `prep_minutes <= max_prep_minutes`.
+  The plan records `servings_per_meal`.
+- **Ranking scores one serving**, as recommendations always do; only the simulation (consumption,
+  shortfalls, macros) uses `servings_per_meal`. With more than one serving, the baseline can
+  therefore pick a recipe that is short of stock or over budget at the real portion; the plan
+  reports it but does not avoid it. Deliberate: a limitation the AI planner may improve on.
 - **Greedy.** Each step ranks the recipes not yet planned with `recommend_recipes` against the
   simulated state, takes the best, and simulates eating it. No recipe repeats within the plan.
 - **Simulation on plain copies.** Inventory is `SimulatedBatch` values (`id`, `ingredient_id`,
@@ -262,21 +268,22 @@ writes nothing. Decisions approved for it:
   eligible recipe is left.
 
 `app/application/meal_planning.py`: `get_meal_plan(session, as_of, meal_count,
-max_prep_minutes=None)` loads the inputs with `load_recommendation_inputs`, copies the batches into
-`SimulatedBatch` values, and calls `plan_meals`. Read-only; no HTTP endpoint yet (Slice 7).
+max_prep_minutes=None, servings_per_meal=1)` loads the inputs with `load_recommendation_inputs`,
+copies the batches into `SimulatedBatch` values, and calls `plan_meals`. Read-only; no HTTP
+endpoint yet (Slice 7).
 
 ### Planner evaluation (`app/evaluation/`, Milestone 7 Slice 2)
 
 Measures planners on fixed scenarios, before any AI exists, so later configurations are compared
 on the same inputs. Not used by the API.
 
-- `scenarios.py`: six in-memory scenarios built from one catalog of 10 ingredients and 6 recipes,
+- `scenarios.py`: seven in-memory scenarios built from one catalog of 10 ingredients and 6 recipes,
   with explicit ids and a fixed date (`SCENARIO_DATE`, 2026-03-10), so runs are reproducible and
   need no database: `well-stocked`, `short-inventory`, `expiring-today`, `macros-nearly-used`,
-  `tight-prep-limit`, `high-protein-preference`. Each holds stock, a daily goal (2200 kcal,
-  160 g protein, 220 g carbs, 70 g fat), what was eaten already, ratings, the request (meal count,
-  prep limit), and an optional soft preference with a machine-checkable rubric
-  (`MinPlannedMacro`, `ExcludeRecipe`).
+  `tight-prep-limit`, `high-protein-preference`, `bigger-meals` (2 meals of 2 servings). Each
+  holds stock, a daily goal (2200 kcal, 160 g protein, 220 g carbs, 70 g fat), what was eaten
+  already, ratings, the request (meal count, prep limit, servings per meal), and an optional
+  soft preference with a machine-checkable rubric (`MinPlannedMacro`, `ExcludeRecipe`).
 - `metrics.py`: `score_plan(scenario, plan)` reads only the scenario and the returned plan, so any
   planner can be scored the same way. Metrics:
   - hard-constraint violations: more meals than requested, repeats, unknown recipes, over the
@@ -295,12 +302,13 @@ on the same inputs. Not used by the API.
 - `scripts/evaluate_planner.py` writes a run as JSON to `evaluation-results/` (git-ignored) and
   prints a summary: `.venv/bin/python scripts/evaluate_planner.py`.
 
-Baseline on 2026-10-25: 6/6 plans complete and hard-constraint compliant; 5/6 without shortfalls
+Baseline on 2026-10-25: 7/7 plans complete and hard-constraint compliant; 6/7 without shortfalls
 (`short-inventory` plans one partial meal); `macros-nearly-used` ends 306 kcal over the goal
 (greedy weighs macro fit at 0.2 of the score); `expiring-today` uses 29% of the expiring stock;
 protein ends 50–100 g short in every scenario (one serving per meal); `high-protein-preference`
 plans 74 g of protein and fails its "planned protein >= 90 g" check (the baseline ignores the
-preference text) while passing "no Bean burrito" by chance.
+preference text) while passing "no Bean burrito" by chance; `bigger-meals` ends 210 kcal under
+the calorie goal and 18 g over on protein (within the 1.5× allowance).
 
 ### Recommendations (`app/domain/`)
 
@@ -609,7 +617,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-301 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+306 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:

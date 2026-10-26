@@ -99,7 +99,9 @@ def stock(ingredient, quantity, use_by=None, batch_id=None):
     )
 
 
-def plan(recipes, batches, meal_count, remaining=None, ratings=None, max_prep_minutes=None):
+def plan(
+    recipes, batches, meal_count, remaining=None, ratings=None, max_prep_minutes=None, servings=1
+):
     """Run the planner for AS_OF.
 
     Args:
@@ -109,12 +111,20 @@ def plan(recipes, batches, meal_count, remaining=None, ratings=None, max_prep_mi
         remaining: Remaining macros, or None for no goal.
         ratings: Rating summaries by recipe id.
         max_prep_minutes: Prep-time limit, or None.
+        servings: Servings per planned meal.
 
     Returns:
         The MealPlan.
     """
     return plan_meals(
-        recipes, batches, AS_OF, remaining, ratings or {}, meal_count, max_prep_minutes
+        recipes,
+        batches,
+        AS_OF,
+        remaining,
+        ratings or {},
+        meal_count,
+        max_prep_minutes,
+        servings,
     )
 
 
@@ -306,6 +316,40 @@ def test_meal_count_must_be_a_positive_whole_number(meal_count):
     """Zero, negatives, booleans, and fractions are rejected."""
     with pytest.raises(InvalidInputError, match="meal_count"):
         plan([], [], meal_count)
+
+
+def test_more_servings_multiply_what_a_meal_uses_and_supplies(session):
+    """Two servings draw twice the stock and supply twice the macros, and the plan records it."""
+    chicken = add_ingredient(session, "Chicken", calories=200, protein=30)
+    bowl = add_recipe(session, "Bowl", (chicken, 100, PRIMARY))
+    batches = [stock(chicken, 1000)]
+
+    one, two = (plan([bowl], batches, 1, servings=n) for n in (1, 2))
+
+    assert (one.servings_per_meal, two.servings_per_meal) == (1, 2)
+    assert two.meals[0].consumed == {chicken.id: 200}
+    assert two.meals[0].macros.calories == pytest.approx(2 * one.meals[0].macros.calories)
+
+
+def test_ranking_scores_one_serving_even_when_more_are_planned(session):
+    """Enough stock for one serving still ranks as fully available; the plan reports the gap."""
+    chicken = add_ingredient(session, "Chicken")
+    bowl = add_recipe(session, "Bowl", (chicken, 100, PRIMARY))
+
+    meal = plan([bowl], [stock(chicken, 150)], 1, servings=2).meals[0]
+
+    assert meal.recommendation.availability.score == 1.0
+    assert meal.consumed == {chicken.id: 150}
+    assert meal.shortfalls == {chicken.id: (200, 150)}
+
+
+@pytest.mark.parametrize("servings", [0, -1, True])
+def test_servings_per_meal_must_be_positive(servings):
+    """Zero, negatives, and booleans are rejected, as in meal confirmation; fractions are fine."""
+    with pytest.raises(InvalidInputError, match="Servings"):
+        plan([], [], 1, servings=servings)
+
+    assert plan([], [], 1, servings=1.5).servings_per_meal == 1.5
 
 
 def test_a_negative_prep_limit_is_rejected():

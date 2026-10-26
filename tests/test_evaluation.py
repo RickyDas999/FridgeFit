@@ -73,7 +73,10 @@ def plan_of(*meals, requested=None):
         The MealPlan.
     """
     return MealPlan(
-        meals=list(meals), meals_requested=requested or len(meals), remaining_at_end=None
+        meals=list(meals),
+        meals_requested=requested or len(meals),
+        servings_per_meal=1,
+        remaining_at_end=None,
     )
 
 

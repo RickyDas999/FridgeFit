@@ -80,6 +80,7 @@ class Scenario(NamedTuple):
     rating_summaries: dict[int, RatingSummary]
     meal_count: int
     max_prep_minutes: int | None
+    servings_per_meal: float
     preference: str | None
     rubric: list[MinPlannedMacro | ExcludeRecipe]
 
@@ -174,6 +175,7 @@ def _scenario(
     meal_count: int,
     eaten: RemainingMacros = NOTHING_EATEN,
     max_prep: int | None = None,
+    servings: float = 1,
     preference: str | None = None,
     rubric: tuple = (),
 ) -> Scenario:
@@ -186,6 +188,7 @@ def _scenario(
         meal_count: Meals to plan.
         eaten: Macros already eaten today.
         max_prep: Prep-time limit in minutes, or None.
+        servings: Servings in every planned meal.
         preference: The user's soft preference in words, or None.
         rubric: Machine-checkable rules standing in for the preference.
 
@@ -202,6 +205,7 @@ def _scenario(
         rating_summaries=RATINGS,
         meal_count=meal_count,
         max_prep_minutes=max_prep,
+        servings_per_meal=servings,
         preference=preference,
         rubric=list(rubric),
     )
@@ -255,5 +259,12 @@ def build_scenarios() -> list[Scenario]:
             # 90 g: above what ignoring the request gives, reachable by choosing high-protein
             # recipes, so the check separates following the preference from ignoring it.
             rubric=[MinPlannedMacro("protein", 90), ExcludeRecipe("Bean burrito")],
+        ),
+        _scenario(
+            "bigger-meals",
+            "Two larger meals of two servings each; ranking still scores a single serving.",
+            build_batches(FULL_STOCK),
+            meal_count=2,
+            servings=2,
         ),
     ]
