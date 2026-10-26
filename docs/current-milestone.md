@@ -119,7 +119,7 @@ Milestone 7 slices:
 | 2 | Planning evaluation harness: reproducible scenarios and metrics (feasibility, constraints, macro deviation, expiring-food use, diversity) | Implemented |
 | 3 | Read-only AI tool boundary: a few narrow, structured, in-process tools; no mutation or broad database access | Implemented |
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Implemented |
-| 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | In progress |
+| 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Implemented |
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Not started |
 | 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Not started |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
@@ -361,8 +361,7 @@ The read-only tools an AI planner will use to inspect FridgeFit. Nothing calls C
 `run_ai_planner(snapshot, config, client)` lets Claude inspect the snapshot through the planning
 tools and propose a plan. It is explicit Python control flow over the Anthropic SDK's
 `messages.create` (`anthropic>=2.3`; no agent framework), returns an `AIPlanAttempt`, and never
-raises for model or provider problems. It writes nothing; choosing between the AI plan and the
-deterministic fallback is the next step of Slice 5.
+raises for model or provider problems. It writes nothing.
 
 - **Configuration.** `planner_config_from_env()`: `PLANNER_MODEL` with no default (unset means
   AI planning is off), `PLANNER_EFFORT` defaulting to `low` (one of low, medium, high, xhigh,
@@ -389,6 +388,14 @@ deterministic fallback is the next step of Slice 5.
   summed over calls, model calls, tool calls, invalid tool calls, rejected plans, model seconds,
   total seconds.
   Estimated cost is derived from these in Slice 6.
+- **Choosing the plan** (Slice 5): `plan_day(snapshot, config, client)` returns a
+  `PlanningResult`: the `plan` (a `MealPlan`), its `source` (`ai` or `baseline`), the AI's
+  `explanation` (model-written text, never parsed for numbers; only with an AI plan), the
+  `fallback_reason`, and the `attempt` (with its usage) when one ran. The AI's plan is used only
+  when the attempt ends `submitted`; it is replayed again with `replay_proposal`, so every number
+  is FridgeFit's and nothing unvalidated is returned. Otherwise the baseline (`plan_meals`) is
+  returned: when `PLANNER_MODEL` or `ANTHROPIC_API_KEY` is missing (no call is made), or with the
+  attempt's outcome and detail as the reason. Errors in FridgeFit's own code are not caught.
 - Tested with a scripted fake client (`tests/test_ai_planner.py`); no test calls the API.
 - One live run on 2026-10-26 (`expiring-today`, 2 meals, no prep limit, `claude-haiku-5-5`, effort
   low): `submitted` `[2, 4]` (Spinach omelette, Salmon rice plate, the same plan as the baseline)
@@ -703,7 +710,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-358 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+364 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:

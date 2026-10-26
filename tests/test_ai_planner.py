@@ -8,10 +8,12 @@ import pytest
 from app.application.ai_planner import (
     PlannerConfig,
     make_client,
+    plan_day,
     planner_config_from_env,
     run_ai_planner,
 )
 from app.application.planning_tools import PlanningRequest, PlanningSnapshot
+from app.domain.meal_planning import plan_meals
 from app.evaluation.scenarios import SCENARIO_DATE, build_scenarios
 
 CONFIG = PlannerConfig(model="claude-test-model")
@@ -302,3 +304,89 @@ def test_without_an_api_key_there_is_no_client(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     client = make_client()
     assert client is not None and client.max_retries == 0
+
+
+def baseline_plan(snap):
+    """The deterministic greedy plan for a snapshot.
+
+    Args:
+        snap: The snapshot.
+
+    Returns:
+        The MealPlan.
+    """
+    request = snap.request
+    return plan_meals(
+        list(snap.recipes_by_id.values()), snap.batches, request.as_of, snap.remaining,
+        snap.rating_summaries, request.meal_count, request.max_prep_minutes,
+        request.servings_per_meal,
+    )
+
+
+def planned_ids(plan):
+    """List a plan's recipe ids in order.
+
+    Args:
+        plan: A MealPlan.
+
+    Returns:
+        The recipe ids.
+    """
+    return [meal.recommendation.recipe.id for meal in plan.meals]
+
+
+@pytest.mark.parametrize(
+    ("config", "client", "reason"),
+    [
+        (None, FakeClient(), "AI planning is off: PLANNER_MODEL is not set"),
+        (CONFIG, None, "AI planning is off: ANTHROPIC_API_KEY is not set"),
+    ],
+)
+def test_without_ai_the_baseline_plan_is_returned(config, client, reason):
+    """With no model or no key, no call is made and the baseline plan comes back with why."""
+    snap = snapshot()
+
+    result = plan_day(snap, config, client)
+
+    assert (result.source, result.fallback_reason, result.attempt) == ("baseline", reason, None)
+    assert result.plan == baseline_plan(snap)
+
+
+def test_a_valid_ai_plan_is_returned_with_fridgefits_numbers():
+    """The AI's own order is used, replayed deterministically, with its explanation."""
+    snap = snapshot()
+    reversed_order = tool_use(
+        "submit_plan", {"recipe_ids": [4, 2], "explanation": "Salmon first, it is due today."}
+    )
+
+    result = plan_day(snap, CONFIG, FakeClient(reply(reversed_order)))
+
+    assert (result.source, result.fallback_reason) == ("ai", None)
+    assert planned_ids(result.plan) == [4, 2]
+    assert planned_ids(baseline_plan(snap)) == [2, 4]
+    assert result.explanation == "Salmon first, it is due today."
+    assert result.plan.meals[0].macros.calories == pytest.approx(518.5, abs=0.1)
+    assert result.attempt.outcome == "submitted"
+
+
+@pytest.mark.parametrize(
+    ("script", "reason_start"),
+    [
+        ([anthropic.APIConnectionError(request=REQUEST)], "provider_error: APIConnectionError"),
+        ([reply(stop_reason="refusal")], "refusal: "),
+        ([reply(tool_use("submit_plan", {"recipe_ids": [2], "explanation": "One."})),
+          reply(tool_use("submit_plan", {"recipe_ids": [2, 2], "explanation": "Two."}))],
+         "invalid_plan: 'Spinach omelette' is planned more than once"),
+    ],
+)
+def test_a_failed_ai_attempt_falls_back_to_the_baseline(script, reason_start):
+    """Provider errors, refusals, and plans still invalid after a correction give the baseline."""
+    snap = snapshot()
+
+    result = plan_day(snap, CONFIG, FakeClient(*script))
+
+    assert result.source == "baseline"
+    assert result.fallback_reason.startswith(reason_start)
+    assert result.plan == baseline_plan(snap)
+    assert result.explanation is None
+    assert result.attempt is not None
