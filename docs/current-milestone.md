@@ -340,7 +340,7 @@ Baseline on 2026-10-25: 7/7 plans complete and hard-constraint compliant; 6/7 wi
 (`short-inventory` plans one partial meal); `macros-nearly-used` ends 306 kcal over the goal
 (greedy weighs macro fit at 0.2 of the score); `expiring-today` uses 29% of the expiring stock;
 protein ends 50–100 g short in every scenario (one serving per meal); `high-protein-preference`
-plans 74 g of protein and fails its "planned protein >= 90 g" check (the baseline ignores the
+plans 74 g of protein and fails its "planned protein >= 85 g" check (the baseline ignores the
 preference text) while passing "no Bean burrito" by chance; `bigger-meals` ends 210 kcal under
 the calorie goal and 18 g over on protein (within the 1.5× allowance).
 
@@ -727,7 +727,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-372 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+373 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:

@@ -1,3 +1,4 @@
+import itertools
 import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -7,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.application.ai_planner import AttemptUsage, PlannerConfig
-from app.domain.meal_planning import MealPlan
+from app.domain.meal_planning import MealPlan, replay_plan
 from app.domain.nutrition_state import RemainingMacros
 from app.domain.recipe_macros import RecipeMacros
 from app.evaluation.metrics import (
@@ -329,3 +330,23 @@ def test_a_live_run_writes_one_results_file_per_planner(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "AI: 0/7 AI plans used" in output
     assert "Estimated spend: $0.0000 of a $1.00 cap" in output
+
+
+@pytest.mark.parametrize("s", [s for s in build_scenarios() if s.rubric], ids=lambda s: s.id)
+def test_every_minimum_macro_rubric_is_reachable_by_some_valid_plan(s):
+    """A rubric bar no plan can reach measures nothing; some valid plan must clear it."""
+    by_id = {recipe.id: recipe for recipe in s.recipes}
+    best = {}
+    for ids in itertools.permutations(by_id, s.meal_count):
+        replayed = replay_plan(
+            [by_id[i] for i in ids], s.recipes, s.batches, SCENARIO_DATE, s.remaining,
+            s.rating_summaries, s.meal_count, s.max_prep_minutes, s.servings_per_meal,
+        )
+        if replayed.plan and not replayed.problems:
+            for macro in ("calories", "protein", "carbs", "fat"):
+                total = sum(getattr(meal.macros, macro) for meal in replayed.plan.meals)
+                best[macro] = max(best.get(macro, 0.0), total)
+
+    for rule in s.rubric:
+        if isinstance(rule, MinPlannedMacro):
+            assert best[rule.macro] >= rule.amount, (rule, best[rule.macro])
