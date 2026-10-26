@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.application.recommendations import load_recommendation_inputs
 from app.domain.meal_planning import MealPlan, SimulatedBatch, plan_meals
+from app.persistence.models import InventoryBatch
 
 
 def get_meal_plan(
@@ -34,16 +35,7 @@ def get_meal_plan(
             positive.
     """
     inputs = load_recommendation_inputs(session, as_of)
-    batches = [
-        SimulatedBatch(
-            id=batch.id,
-            ingredient_id=batch.ingredient_id,
-            quantity_remaining=batch.quantity_remaining,
-            use_by_date=batch.use_by_date,
-            purchased_at=batch.purchased_at,
-        )
-        for batch in inputs.batches
-    ]
+    batches = to_simulated_batches(inputs.batches)
     return plan_meals(
         inputs.recipes,
         batches,
@@ -54,3 +46,24 @@ def get_meal_plan(
         max_prep_minutes,
         servings_per_meal,
     )
+
+
+def to_simulated_batches(batches: list[InventoryBatch]) -> list[SimulatedBatch]:
+    """Copy inventory batches into plain values, so planning never touches session objects.
+
+    Args:
+        batches: Loaded inventory batches.
+
+    Returns:
+        One SimulatedBatch per batch, in the same order.
+    """
+    return [
+        SimulatedBatch(
+            id=batch.id,
+            ingredient_id=batch.ingredient_id,
+            quantity_remaining=batch.quantity_remaining,
+            use_by_date=batch.use_by_date,
+            purchased_at=batch.purchased_at,
+        )
+        for batch in batches
+    ]
