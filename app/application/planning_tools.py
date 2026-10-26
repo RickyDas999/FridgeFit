@@ -456,16 +456,28 @@ def run_tool(snapshot: PlanningSnapshot, name: str, tool_input: object) -> ToolR
     try:
         validated = tool.input_model.model_validate(tool_input)
     except ValidationError as exc:
-        problems = "; ".join(
-            f"{'.'.join(str(part) for part in e['loc']) or 'input'}: {e['msg']}"
-            for e in exc.errors()
-        )
-        return _error(f"Invalid input for {name}: {problems}")
+        return invalid_input_result(name, exc)
     output = tool.function(snapshot, validated)
     return ToolResult(output.model_dump_json(), is_error=isinstance(output, ToolError))
 
 
 # --- Helpers. ------------------------------------------------------------------------------
+
+
+def invalid_input_result(tool_name: str, exc: ValidationError) -> ToolResult:
+    """Describe why a tool's input failed validation, as an error result for the model.
+
+    Args:
+        tool_name: The tool that was called.
+        exc: The validation error.
+
+    Returns:
+        The ToolResult, as JSON with ``is_error`` set.
+    """
+    problems = "; ".join(
+        f"{'.'.join(str(part) for part in e['loc']) or 'input'}: {e['msg']}" for e in exc.errors()
+    )
+    return _error(f"Invalid input for {tool_name}: {problems}")
 
 
 def _error(message: str) -> ToolResult:

@@ -118,7 +118,7 @@ Milestone 7 slices:
 | 1 | Deterministic multi-meal planning baseline: simulate each chosen meal, no database writes, reuse existing calculations | Implemented |
 | 2 | Planning evaluation harness: reproducible scenarios and metrics (feasibility, constraints, macro deviation, expiring-food use, diversity) | Implemented |
 | 3 | Read-only AI tool boundary: a few narrow, structured, in-process tools; no mutation or broad database access | Implemented |
-| 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Not started |
+| 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Implemented |
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Not started |
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Not started |
 | 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Not started |
@@ -347,6 +347,39 @@ The read-only tools an AI planner will use to inspect FridgeFit. Nothing calls C
   `is_error`). An unknown tool, invalid input, or unknown recipe id gives a JSON `{"error": ...}`
   with `is_error` set, which the model can correct.
 - Claude chooses recipes and their order only; servings come from the request.
+
+### Claude planning loop (`app/application/ai_planner.py`, Milestone 7 Slice 4)
+
+`run_ai_planner(snapshot, config, client)` lets Claude inspect the snapshot through the planning
+tools and propose a plan. It is explicit Python control flow over the Anthropic SDK's
+`messages.create` (`anthropic>=2.3`; no agent framework), returns an `AIPlanAttempt`, and never
+raises for model or provider problems. It does not validate the proposal or write anything:
+validation, the one correction, and the deterministic fallback are Slice 5.
+
+- **Configuration.** `planner_config_from_env()`: `PLANNER_MODEL` with no default (unset means
+  AI planning is off), `PLANNER_EFFORT` defaulting to `low` (one of low, medium, high, xhigh,
+  max). `make_client()` uses the server's `ANTHROPIC_API_KEY` (no key, no client) with SDK
+  retries off, so the time budget bounds every attempt.
+- **Limits** (`PlannerConfig`): at most 6 model calls, `max_tokens` 4096 per call, 60 s for the
+  whole loop; each call's timeout is the time left. Adaptive thinking with the configured effort;
+  no sampling parameters.
+- **Tools.** The three read-only tools plus `submit_plan(recipe_ids, explanation)`, all with
+  `strict: true`. Calling `submit_plan` with valid input ends the loop; invalid input is an error
+  result the model can fix. Each reply is appended unchanged (thinking blocks included) before
+  one user message carrying every tool result by id.
+- **Outcomes.** `submitted` (a proposal, not yet validated), `refusal`, `truncated`
+  (`max_tokens`), `no_plan` (stopped without `submit_plan`), `step_limit`, `time_limit` (budget
+  spent or call timed out), `provider_error` (connection, rate limit, other API errors; no server
+  fallback model).
+- **Usage per attempt** (`AttemptUsage`): provider, model, effort, input/output and cache tokens
+  summed over calls, model calls, tool calls, invalid tool calls, model seconds, total seconds.
+  Estimated cost is derived from these in Slice 6.
+- Tested with a scripted fake client (`tests/test_ai_planner.py`); no test calls the API.
+- One live run on 2026-10-26 (`expiring-today`, 2 meals, no prep limit, `claude-haiku-5-5`, effort
+  low): `submitted` `[2, 4]` (Spinach omelette, Salmon rice plate, the same plan as the baseline)
+  in 3 model calls and 3 tool calls with no invalid input; 8,908 input and 773 output tokens;
+  9.1 s. Its explanation's figures (748 kcal, 56 g protein; about 1,450 kcal left) match
+  `simulate_plan`. No cache reads (nothing is marked for caching).
 
 ### Recommendations (`app/domain/`)
 
@@ -655,7 +688,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-328 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+343 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
