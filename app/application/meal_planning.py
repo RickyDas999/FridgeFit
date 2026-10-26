@@ -7,7 +7,11 @@ from app.domain.meal_planning import MealPlan, SimulatedBatch, plan_meals
 
 
 def get_meal_plan(
-    session: Session, as_of: date, meal_count: int, max_prep_minutes: int | None = None
+    session: Session,
+    as_of: date,
+    meal_count: int,
+    max_prep_minutes: int | None = None,
+    servings_per_meal: float = 1,
 ) -> MealPlan:
     """Plan the rest of a day's meals with the deterministic greedy planner.
 
@@ -19,13 +23,15 @@ def get_meal_plan(
         as_of: The calendar day to plan.
         meal_count: How many meals to plan; at least 1.
         max_prep_minutes: Only plan recipes that take at most this long, or None for no limit.
+        servings_per_meal: Servings in every planned meal; any positive number.
 
     Returns:
         The plan, possibly with fewer meals than requested.
 
     Raises:
         InvalidInputError: If ``as_of`` is not a calendar date, ``meal_count`` is not a positive
-            whole number, or ``max_prep_minutes`` is negative.
+            whole number, ``max_prep_minutes`` is negative, or ``servings_per_meal`` is not
+            positive.
     """
     inputs = load_recommendation_inputs(session, as_of)
     batches = [
@@ -46,4 +52,5 @@ def get_meal_plan(
         inputs.rating_summaries,
         meal_count,
         max_prep_minutes,
+        servings_per_meal,
     )

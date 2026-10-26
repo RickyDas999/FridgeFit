@@ -7,11 +7,9 @@ from app.domain.nutrition_state import RemainingMacros
 from app.domain.recipe_consumption import plan_recipe_consumption
 from app.domain.recipe_macros import RecipeMacros, calculate_recipe_macros
 from app.domain.recommendations import Recommendation, recommend_recipes
+from app.domain.validation import validate_servings
 from app.errors import InvalidInputError
 from app.persistence.models import Recipe
-
-# The deterministic baseline plans one serving per meal.
-SERVINGS_PER_MEAL = 1
 
 
 class SimulatedBatch(NamedTuple):
@@ -43,6 +41,8 @@ class MealPlan(NamedTuple):
 
     meals: list[PlannedMeal]
     meals_requested: int
+    # Every meal in the plan is this many servings.
+    servings_per_meal: float
     remaining_at_end: RemainingMacros | None
 
 
@@ -54,15 +54,21 @@ def plan_meals(
     rating_summaries: dict[int, RatingSummary],
     meal_count: int,
     max_prep_minutes: int | None = None,
+    servings_per_meal: float = 1,
 ) -> MealPlan:
     """Plan the next meals of a day greedily, simulating each one before choosing the next.
 
     Each step ranks the recipes not yet planned with ``recommend_recipes`` against the simulated
     inventory and remaining macros, takes the best (ties: rated before unrated, then the higher
-    average rating, then the lower recipe id), and simulates eating one serving of it. Because the
-    next step ranks against the updated simulation, availability, expiry urgency, and macro fit
-    all reflect the meals already planned. Partially available recipes may be planned; they use
-    only what is on hand, and their macros reflect that. Nothing is persisted or mutated.
+    average rating, then the lower recipe id), and simulates eating ``servings_per_meal`` servings
+    of it. Because the next step ranks against the updated simulation, availability, expiry
+    urgency, and macro fit all reflect the meals already planned. Partially available recipes may
+    be planned; they use only what is on hand, and their macros reflect that. Nothing is
+    persisted or mutated.
+
+    Ranking scores one serving, as recommendations always do; only the simulation uses
+    ``servings_per_meal``. So with more than one serving, a recipe can be chosen that is short of
+    stock or over budget at the real portion: the plan reports that, but does not avoid it.
 
     Args:
         recipes: Candidate recipes, with ingredients and nutrition data loaded.
@@ -73,18 +79,22 @@ def plan_meals(
         rating_summaries: Mapping of ``recipe_id`` to its rating average and count.
         meal_count: How many meals to plan; at least 1.
         max_prep_minutes: Only plan recipes that take at most this long, or None for no limit.
+        servings_per_meal: Servings in every planned meal; any positive number, as in meal
+            confirmation.
 
     Returns:
         The plan. It holds fewer than ``meal_count`` meals when no eligible recipe is left.
 
     Raises:
         InvalidInputError: If ``meal_count`` is not a positive whole number, ``max_prep_minutes``
-            is negative, or ``as_of`` is not a calendar date.
+            is negative, ``servings_per_meal`` is not positive, or ``as_of`` is not a calendar
+            date.
     """
     if isinstance(meal_count, bool) or not isinstance(meal_count, int) or meal_count < 1:
         raise InvalidInputError(f"meal_count must be a positive whole number, got {meal_count!r}")
     if max_prep_minutes is not None and max_prep_minutes < 0:
         raise InvalidInputError(f"max_prep_minutes must not be negative, got {max_prep_minutes}")
+    validate_servings(servings_per_meal)
 
     candidates = [
         recipe for recipe in recipes
@@ -104,12 +114,19 @@ def plan_meals(
             break
         chosen = min(ranked, key=_tie_break_key)
 
-        meal, simulated_batches = _simulate_meal(chosen, simulated_batches, remaining)
+        meal, simulated_batches = _simulate_meal(
+            chosen, simulated_batches, remaining, servings_per_meal
+        )
         meals.append(meal)
         remaining = meal.remaining_after
         candidates = [recipe for recipe in candidates if recipe.id != chosen.recipe.id]
 
-    return MealPlan(meals=meals, meals_requested=meal_count, remaining_at_end=remaining)
+    return MealPlan(
+        meals=meals,
+        meals_requested=meal_count,
+        servings_per_meal=servings_per_meal,
+        remaining_at_end=remaining,
+    )
 
 
 def _tie_break_key(recommendation: Recommendation) -> tuple:
@@ -134,8 +151,9 @@ def _simulate_meal(
     recommendation: Recommendation,
     batches: Sequence[SimulatedBatch],
     remaining: RemainingMacros | None,
+    servings: float,
 ) -> tuple[PlannedMeal, list[SimulatedBatch]]:
-    """Work out what eating one serving of a recommended recipe would use and leave.
+    """Work out what eating some servings of a recommended recipe would use and leave.
 
     Draws follow FEFO, exactly as confirming the meal would.
 
@@ -143,6 +161,7 @@ def _simulate_meal(
         recommendation: The chosen recipe and the scores that chose it.
         batches: The simulated inventory before this meal.
         remaining: The remaining macros before this meal, or None without a goal.
+        servings: Servings eaten.
 
     Returns:
         The planned meal, and new batch copies with its draws taken out (emptied ones dropped).
@@ -151,7 +170,7 @@ def _simulate_meal(
     for batch in batches:
         batches_by_ingredient[batch.ingredient_id].append(batch)
     recipe = recommendation.recipe
-    consumption = plan_recipe_consumption(recipe, SERVINGS_PER_MEAL, batches_by_ingredient)
+    consumption = plan_recipe_consumption(recipe, servings, batches_by_ingredient)
     macros = calculate_recipe_macros(recipe, quantity_overrides=consumption.fulfilled_quantities)
 
     remaining_after = None
