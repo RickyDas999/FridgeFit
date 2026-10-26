@@ -2,13 +2,17 @@ import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import anthropic
 import pytest
 from pydantic import ValidationError
 
+from app.application.ai_planner import AttemptUsage, PlannerConfig
 from app.domain.meal_planning import MealPlan
 from app.domain.nutrition_state import RemainingMacros
 from app.domain.recipe_macros import RecipeMacros
 from app.evaluation.metrics import (
+    SpendingCap,
+    evaluate_ai,
     evaluate_baseline,
     expiring_food_result,
     hard_constraint_violations,
@@ -16,6 +20,7 @@ from app.evaluation.metrics import (
     rubric_check,
     score_plan,
 )
+from app.evaluation.pricing import estimate_cost
 from app.evaluation.results import EvaluationRun, ExpiringFoodResult
 from app.evaluation.scenarios import (
     DAILY_GOAL,
@@ -26,6 +31,7 @@ from app.evaluation.scenarios import (
     build_scenarios,
 )
 from scripts.evaluate_planner import main
+from tests.test_ai_planner import REQUEST, SUBMIT, FakeClient, reply
 
 ZERO = RecipeMacros(calories=0, protein=0, carbs=0, fat=0)
 
@@ -216,3 +222,110 @@ def test_scenario_dates_are_relative_to_the_fixed_scenario_date():
     [batch] = build_batches({5: 100}, use_by_days={5: 2})
 
     assert batch.use_by_date == SCENARIO_DATE + timedelta(days=2)
+
+
+def ai_config(model="claude-haiku-5-5"):
+    """A planner configuration for evaluation tests.
+
+    Args:
+        model: The model id.
+
+    Returns:
+        The PlannerConfig.
+    """
+    return PlannerConfig(model=model)
+
+
+def test_estimated_cost_comes_from_raw_tokens_and_the_price_table():
+    """Cost is tokens times the listed price per million; an unpriced model has none."""
+    usage = AttemptUsage("anthropic", "claude-sonnet-5-5", "low", 10_000, 1_000, 0, 0,
+                         3, 3, 0, 0, 5.0, 5.0)
+
+    assert estimate_cost(usage) == pytest.approx(10_000 * 2 / 1e6 + 1_000 * 10 / 1e6)
+    assert estimate_cost(usage._replace(model="claude-unknown")) is None
+
+
+def test_ai_evaluation_records_each_attempt_and_scores_the_plan_it_returns():
+    """Every repeat is scored like the baseline and carries its outcome, usage, and cost."""
+    expiring = [s for s in build_scenarios() if s.id == "expiring-today"]
+    client = FakeClient(reply(SUBMIT), reply(SUBMIT))
+
+    run = evaluate_ai(ai_config(), client, runs=2, cap=SpendingCap(1.0), scenarios=expiring)
+
+    assert run.planner == "claude-haiku-5-5:low"
+    assert [(r.scenario_id, r.run, r.ai.source) for r in run.results] == [
+        ("expiring-today", 1, "ai"), ("expiring-today", 2, "ai"),
+    ]
+    assert run.results[0].planned_recipes == ["Spinach omelette", "Salmon rice plate"]
+    assert run.results[0].ai.estimated_cost_usd == pytest.approx(
+        100 * 0.10 / 1e6 + 20 * 0.50 / 1e6
+    )
+    assert (run.summary.ai.attempts, run.summary.ai.ai_plans_used) == (2, 2)
+    assert run.stopped_early is None
+
+
+def test_a_failed_attempt_is_scored_on_the_baseline_plan_it_fell_back_to():
+    """A provider error is recorded as a fallback; the plan scored is the baseline's."""
+    expiring = [s for s in build_scenarios() if s.id == "expiring-today"]
+    client = FakeClient(anthropic.APIConnectionError(request=REQUEST))
+
+    run = evaluate_ai(ai_config(), client, runs=1, cap=SpendingCap(1.0), scenarios=expiring)
+
+    [result] = run.results
+    assert result.ai.source == "baseline"
+    assert result.ai.fallback_reason.startswith("provider_error")
+    baseline = evaluate_baseline(scenarios=expiring).results[0]
+    assert result.planned_recipes == baseline.planned_recipes
+    assert run.summary.ai.fallbacks == 1
+
+
+def test_the_spending_cap_stops_new_attempts():
+    """Once the estimate reaches the cap, no further attempt starts and the run says why."""
+    expiring = [s for s in build_scenarios() if s.id == "expiring-today"]
+    cap = SpendingCap(0.000001)
+
+    run = evaluate_ai(ai_config(), FakeClient(reply(SUBMIT)), runs=3, cap=cap,
+                      scenarios=expiring)
+
+    assert len(run.results) == 1
+    assert run.stopped_early == "spending cap $0.00 reached after 1 attempts"
+    assert cap.spent_usd > cap.max_usd
+
+
+def test_an_unpriced_model_cannot_be_evaluated():
+    """Without a price the cap could not be enforced, so the run refuses to start."""
+    with pytest.raises(ValueError, match="No price listed"):
+        evaluate_ai(ai_config("claude-unknown"), FakeClient(), runs=1, cap=SpendingCap(1.0))
+
+
+def test_the_script_refuses_api_calls_without_live(tmp_path, capsys):
+    """--config without --live stops before anything runs or is written."""
+    with pytest.raises(SystemExit):
+        main(["--results-dir", str(tmp_path), "--config", "claude-haiku-5-5:1"])
+
+    assert "add --live" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_the_script_needs_an_api_key_for_live_runs(tmp_path, monkeypatch, capsys):
+    """--live without ANTHROPIC_API_KEY stops before anything runs."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    with pytest.raises(SystemExit):
+        main(["--results-dir", str(tmp_path), "--live", "--config", "claude-haiku-5-5:1"])
+
+    assert "ANTHROPIC_API_KEY" in capsys.readouterr().err
+
+
+def test_a_live_run_writes_one_results_file_per_planner(tmp_path, capsys):
+    """Baseline plus one AI configuration: two validated files and a spend summary."""
+    failures = [anthropic.APIConnectionError(request=REQUEST)] * len(build_scenarios())
+
+    main(["--results-dir", str(tmp_path), "--live", "--config", "claude-haiku-5-5:1"],
+         client=FakeClient(*failures))
+
+    names = sorted(path.name.split("-", 2)[-1] for path in tmp_path.glob("*.json"))
+    assert names == ["claude-haiku-5-5_low.json", "deterministic-greedy.json"]
+    output = capsys.readouterr().out
+    assert "AI: 0/7 AI plans used" in output
+    assert "Estimated spend: $0.0000 of a $1.00 cap" in output

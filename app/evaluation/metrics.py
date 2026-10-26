@@ -1,12 +1,19 @@
-"""Score meal plans against scenarios, and evaluate the deterministic planner on all of them."""
+"""Score meal plans against scenarios, and evaluate planners (deterministic and AI) on them."""
 
 import math
+import time
 from datetime import datetime, timedelta
+from typing import Callable
 
+from app.application.ai_planner import PlannerConfig, PlanningResult, plan_day
+from app.application.planning_tools import PlanningRequest, PlanningSnapshot
 from app.domain.expiry_urgency import EXPIRING_SOON_DAYS
 from app.domain.macro_fit import PROTEIN_ACCEPTABLE_EXCESS
 from app.domain.meal_planning import MealPlan, plan_meals, plan_violations
+from app.evaluation.pricing import PRICES, estimate_cost
 from app.evaluation.results import (
+    AISummary,
+    AttemptResult,
     EvaluationRun,
     ExpiringFoodResult,
     MacroAmounts,
@@ -63,6 +70,171 @@ def evaluate_baseline(
         scenario_date=SCENARIO_DATE,
         results=results,
         summary=summarize(results),
+    )
+
+
+class SpendingCap:
+    """A running estimate of evaluation spend, shared across configurations of one run."""
+
+    def __init__(self, max_usd: float):
+        """Start with nothing spent.
+
+        Args:
+            max_usd: No new attempt starts once the estimate reaches this many US dollars.
+        """
+        self.max_usd = max_usd
+        self.spent_usd = 0.0
+
+    def reached(self) -> bool:
+        """Whether the estimated spend has reached the cap.
+
+        Returns:
+            True once no further attempt may start.
+        """
+        return self.spent_usd >= self.max_usd
+
+
+def evaluate_ai(
+    config: PlannerConfig,
+    client,
+    runs: int,
+    cap: SpendingCap,
+    scenarios: list[Scenario] | None = None,
+    created_at: datetime | None = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> EvaluationRun:
+    """Plan every scenario ``runs`` times with ``plan_day`` and score what it returns.
+
+    Each attempt's plan, AI or fallback, is scored with ``score_plan`` like the baseline's, and
+    its outcome, usage, and estimated cost are recorded. Repeats go scenario set by scenario set,
+    so a run stopped by the cap still covers whole sets first. The cap is checked before each
+    attempt, so it can be exceeded by at most one attempt.
+
+    Args:
+        config: The Claude configuration to evaluate.
+        client: An Anthropic client (or a stand-in).
+        runs: How many times to plan each scenario; at least 1.
+        cap: The shared spending cap; its spend is updated as attempts finish.
+        scenarios: Scenarios to run; defaults to ``build_scenarios()``.
+        created_at: Timestamp recorded on the run; defaults to now.
+        clock: Seconds from a monotonic clock, passed to the planner.
+
+    Returns:
+        The evaluation run, with ``stopped_early`` set if the cap ended it.
+
+    Raises:
+        ValueError: If ``runs`` is not positive or the model has no listed price (the cap could
+            not be enforced).
+    """
+    if runs < 1:
+        raise ValueError(f"runs must be at least 1, got {runs}")
+    if ("anthropic", config.model) not in PRICES:
+        raise ValueError(f"No price listed for {config.model}; the spending cap needs one.")
+    scenarios = build_scenarios() if scenarios is None else scenarios
+    results = []
+    stopped_early = None
+    for run in range(1, runs + 1):
+        for scenario in scenarios:
+            if cap.reached():
+                stopped_early = (
+                    f"spending cap ${cap.max_usd:.2f} reached after {len(results)} attempts"
+                )
+                break
+            planned = plan_day(scenario_snapshot(scenario), config, client, clock)
+            attempt = attempt_result(planned)
+            cap.spent_usd += attempt.estimated_cost_usd or 0.0
+            results.append(score_plan(scenario, planned.plan).model_copy(
+                update={"run": run, "ai": attempt}
+            ))
+        if stopped_early:
+            break
+    summary = summarize(results).model_copy(update={"ai": ai_summary(results)})
+    return EvaluationRun(
+        planner=f"{config.model}:{config.effort}",
+        created_at=created_at or datetime.now(),
+        scenario_date=SCENARIO_DATE,
+        results=results,
+        summary=summary,
+        stopped_early=stopped_early,
+    )
+
+
+def scenario_snapshot(scenario: Scenario) -> PlanningSnapshot:
+    """Turn a scenario into the snapshot the AI planner and its tools read.
+
+    Args:
+        scenario: The scenario.
+
+    Returns:
+        The PlanningSnapshot, with the scenario's preference text.
+    """
+    return PlanningSnapshot(
+        request=PlanningRequest(
+            as_of=SCENARIO_DATE,
+            meal_count=scenario.meal_count,
+            max_prep_minutes=scenario.max_prep_minutes,
+            servings_per_meal=scenario.servings_per_meal,
+            preference=scenario.preference,
+        ),
+        recipes_by_id={recipe.id: recipe for recipe in scenario.recipes},
+        batches=scenario.batches,
+        remaining=scenario.remaining,
+        rating_summaries=scenario.rating_summaries,
+    )
+
+
+def attempt_result(planned: PlanningResult) -> AttemptResult:
+    """Record how an AI planning attempt went, from ``plan_day``'s result.
+
+    Args:
+        planned: The result of ``plan_day`` with an attempt.
+
+    Returns:
+        The AttemptResult, with the estimated cost.
+    """
+    attempt = planned.attempt
+    usage = attempt.usage
+    return AttemptResult(
+        source=planned.source,
+        outcome=attempt.outcome,
+        fallback_reason=planned.fallback_reason,
+        rejected_plans=usage.rejected_plans,
+        model_calls=usage.model_calls,
+        tool_calls=usage.tool_calls,
+        invalid_tool_calls=usage.invalid_tool_calls,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        cache_read_input_tokens=usage.cache_read_input_tokens,
+        cache_creation_input_tokens=usage.cache_creation_input_tokens,
+        model_seconds=usage.model_seconds,
+        total_seconds=usage.total_seconds,
+        estimated_cost_usd=estimate_cost(usage),
+    )
+
+
+def ai_summary(results: list[ScenarioResult]) -> AISummary:
+    """Aggregate the AI attempts of one configuration.
+
+    Args:
+        results: Scenario results that each carry an ``ai`` attempt.
+
+    Returns:
+        The AISummary.
+    """
+    attempts = [r.ai for r in results]
+    seconds = [a.total_seconds for a in attempts]
+    costs = [a.estimated_cost_usd for a in attempts]
+    return AISummary(
+        attempts=len(attempts),
+        ai_plans_used=sum(1 for a in attempts if a.source == "ai"),
+        fallbacks=sum(1 for a in attempts if a.source == "baseline"),
+        corrected_plans_used=sum(1 for a in attempts if a.source == "ai" and a.rejected_plans),
+        invalid_tool_calls=sum(a.invalid_tool_calls for a in attempts),
+        input_tokens=sum(a.input_tokens for a in attempts),
+        output_tokens=sum(a.output_tokens for a in attempts),
+        mean_total_seconds=sum(seconds) / len(seconds) if seconds else None,
+        max_total_seconds=max(seconds) if seconds else None,
+        estimated_cost_usd=None if None in costs else sum(costs),
     )
 
 

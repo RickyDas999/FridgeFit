@@ -120,7 +120,7 @@ Milestone 7 slices:
 | 3 | Read-only AI tool boundary: a few narrow, structured, in-process tools; no mutation or broad database access | Implemented |
 | 4 | Bounded Claude planning loop: configured model, server-side key, structured tool calls, step and size limits, usage and latency captured | Implemented |
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Implemented |
-| 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Not started |
+| 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | In progress |
 | 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Not started |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
 | 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
@@ -316,8 +316,25 @@ on the same inputs. Not used by the API.
   `evaluate_baseline()` runs `plan_meals` on every scenario and returns an `EvaluationRun`.
 - `results.py`: Pydantic models (immutable, finite numbers, no unknown fields, ranges such as
   counts ≥ 0) for each scenario's result and the run summary.
-- `scripts/evaluate_planner.py` writes a run as JSON to `evaluation-results/` (git-ignored) and
-  prints a summary: `.venv/bin/python scripts/evaluate_planner.py`.
+- **AI configurations** (Slice 6). `evaluate_ai(config, client, runs, cap)` plans every
+  scenario `runs` times with `plan_day` and scores the returned plan (AI or fallback) with the
+  same `score_plan`. Each result also carries an `AttemptResult`: source, outcome, fallback
+  reason, rejected plans, model and tool calls, invalid tool calls, raw input/output/cache
+  tokens, model and total seconds, and estimated cost; the run summary adds an `AISummary`
+  (AI plans used, fallbacks, plans used after a correction, tokens, mean/max latency, total
+  estimated cost). A `SpendingCap` shared across configurations stops new attempts once the
+  estimate reaches it (checked before each attempt, so at most one attempt over); the run then
+  records `stopped_early`. A model with no listed price is refused.
+- `pricing.py`: the only place prices live, `PRICES` keyed by (provider, model) with input,
+  output, cache-read, and cache-write US dollars per million tokens, labeled as Anthropic list
+  prices as of `PRICES_AS_OF` (2026-10-06): Haiku 5.5 $0.10/$0.50, Sonnet 5.5 $2/$10, Opus 5.5
+  $4/$20. `estimate_cost(usage)` derives cost from the raw tokens, which stay authoritative.
+- `scripts/evaluate_planner.py` writes one JSON file per planner to `evaluation-results/`
+  (git-ignored; `:` in a planner name becomes `_`) and prints summaries. Without flags it runs
+  the baseline only, with no network or cost. `--live --config MODEL:RUNS` (repeatable) adds
+  Claude configurations at `--effort` (default low) under `--max-cost-usd` (default 1.00); it
+  refuses `--config` without `--live`, `--live` without `ANTHROPIC_API_KEY`, and unpriced
+  models, before anything runs.
 
 Baseline on 2026-10-25: 7/7 plans complete and hard-constraint compliant; 6/7 without shortfalls
 (`short-inventory` plans one partial meal); `macros-nearly-used` ends 306 kcal over the goal
@@ -710,7 +727,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-364 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+372 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
