@@ -361,8 +361,8 @@ The read-only tools an AI planner will use to inspect FridgeFit. Nothing calls C
 `run_ai_planner(snapshot, config, client)` lets Claude inspect the snapshot through the planning
 tools and propose a plan. It is explicit Python control flow over the Anthropic SDK's
 `messages.create` (`anthropic>=2.3`; no agent framework), returns an `AIPlanAttempt`, and never
-raises for model or provider problems. It does not validate the proposal or write anything:
-validation, the one correction, and the deterministic fallback are Slice 5.
+raises for model or provider problems. It writes nothing; choosing between the AI plan and the
+deterministic fallback is the next step of Slice 5.
 
 - **Configuration.** `planner_config_from_env()`: `PLANNER_MODEL` with no default (unset means
   AI planning is off), `PLANNER_EFFORT` defaulting to `low` (one of low, medium, high, xhigh,
@@ -372,15 +372,22 @@ validation, the one correction, and the deterministic fallback are Slice 5.
   whole loop; each call's timeout is the time left. Adaptive thinking with the configured effort;
   no sampling parameters.
 - **Tools.** The three read-only tools plus `submit_plan(recipe_ids, explanation)`, all with
-  `strict: true`. Calling `submit_plan` with valid input ends the loop; invalid input is an error
-  result the model can fix. Each reply is appended unchanged (thinking blocks included) before
-  one user message carrying every tool result by id.
-- **Outcomes.** `submitted` (a proposal, not yet validated), `refusal`, `truncated`
+  `strict: true`. Each reply is appended unchanged (thinking blocks included) before one user
+  message carrying every tool result by id.
+- **Validation and one correction** (Slice 5). Every `submit_plan` is checked with
+  `proposal_problems(snapshot, recipe_ids)` (`planning_tools.py`: unknown ids, else
+  `replay_plan`'s problems). A valid plan ends the loop. A rejected plan's tool result lists
+  every problem, and Claude may resubmit in the same conversation, once
+  (`PlannerConfig.max_corrections`), within the same 6 calls and 60 s; a second rejection ends
+  the attempt as `invalid_plan`. Malformed `submit_plan` input is an error result too, but is not
+  a rejected plan.
+- **Outcomes.** `submitted` (a plan that passed validation), `invalid_plan`, `refusal`, `truncated`
   (`max_tokens`), `no_plan` (stopped without `submit_plan`), `step_limit`, `time_limit` (budget
   spent or call timed out), `provider_error` (connection, rate limit, other API errors; no server
   fallback model).
 - **Usage per attempt** (`AttemptUsage`): provider, model, effort, input/output and cache tokens
-  summed over calls, model calls, tool calls, invalid tool calls, model seconds, total seconds.
+  summed over calls, model calls, tool calls, invalid tool calls, rejected plans, model seconds,
+  total seconds.
   Estimated cost is derived from these in Slice 6.
 - Tested with a scripted fake client (`tests/test_ai_planner.py`); no test calls the API.
 - One live run on 2026-10-26 (`expiring-today`, 2 meals, no prep limit, `claude-haiku-5-5`, effort
@@ -696,7 +703,7 @@ Applied on 2026-10-24 (Slice 6) as a Render Blueprint. It declares:
 
 ### Tests
 
-355 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+358 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:

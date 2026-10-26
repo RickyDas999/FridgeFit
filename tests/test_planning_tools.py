@@ -8,6 +8,7 @@ from app.application.planning_tools import (
     PlanningRequest,
     PlanningSnapshot,
     load_planning_snapshot,
+    proposal_problems,
     run_tool,
     tool_definitions,
     tool_result_json,
@@ -252,3 +253,14 @@ def test_an_invalid_request_is_rejected_before_loading(session):
     """The request's numbers are checked with the same rules the planner uses."""
     with pytest.raises(InvalidInputError, match="meal_count"):
         load_planning_snapshot(session, PlanningRequest(date(2026, 3, 10), 0, None, 1, None))
+
+
+def test_proposal_problems_apply_the_replay_rules():
+    """A valid proposal has none; repeats, short plans, and unknown ids are each explained."""
+    snapshot = snapshot_for("expiring-today")
+
+    assert proposal_problems(snapshot, [OMELETTE, SALMON_PLATE]) == []
+    assert proposal_problems(snapshot, [OMELETTE]) == [
+        "only 1 of 2 meals planned while eligible recipes remain"
+    ]
+    assert proposal_problems(snapshot, [OMELETTE, 99]) == ["unknown recipe id(s): 99"]

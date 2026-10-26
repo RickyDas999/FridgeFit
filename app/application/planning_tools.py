@@ -27,6 +27,7 @@ from app.domain.meal_planning import (
     SimulatedBatch,
     plan_violations,
     ranking_key,
+    replay_plan,
     simulate_meal,
     validate_plan_request,
 )
@@ -380,6 +381,33 @@ def simulate_plan(snapshot: PlanningSnapshot, tool_input: SimulatePlanInput) -> 
         violations=violations,
         within_constraints=not violations,
     )
+
+
+def proposal_problems(snapshot: PlanningSnapshot, recipe_ids: list[int]) -> list[str]:
+    """Check a proposed plan deterministically: every reason it is not a valid plan.
+
+    Args:
+        snapshot: The planning request's data.
+        recipe_ids: The proposed recipe ids, in eating order.
+
+    Returns:
+        The problems (unknown recipe ids, or those ``replay_plan`` finds); empty means valid.
+    """
+    unknown = [i for i in recipe_ids if i not in snapshot.recipes_by_id]
+    if unknown:
+        return [f"unknown recipe id(s): {', '.join(str(i) for i in unknown)}"]
+    request = snapshot.request
+    return replay_plan(
+        [snapshot.recipes_by_id[i] for i in recipe_ids],
+        list(snapshot.recipes_by_id.values()),
+        snapshot.batches,
+        request.as_of,
+        snapshot.remaining,
+        snapshot.rating_summaries,
+        request.meal_count,
+        request.max_prep_minutes,
+        request.servings_per_meal,
+    ).problems
 
 
 class PlanningTool(NamedTuple):
