@@ -30,6 +30,8 @@ class PlannedMeal(NamedTuple):
     recommendation: Recommendation
     # ingredient_id -> quantity this meal would draw (only what is on hand).
     consumed: dict[int, float]
+    # batch id -> quantity drawn from that batch (FEFO), e.g. to see which expiring stock is used.
+    batch_draws: dict[int, float]
     macros: RecipeMacros
     # ingredient_id -> (quantity_needed, quantity_available) for ingredients it is short of.
     shortfalls: dict[int, tuple[float, float]]
@@ -173,6 +175,7 @@ def _simulate_meal(
     meal = PlannedMeal(
         recommendation=recommendation,
         consumed=dict(consumed),
+        batch_draws=dict(taken),
         macros=macros,
         shortfalls=consumption.shortfalls,
         remaining_after=remaining_after,
