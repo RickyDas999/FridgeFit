@@ -176,6 +176,28 @@ def test_requests_without_ai_do_not_use_up_the_daily_limit(app, client, kitchen)
     assert plan(client).json()["source"] == "ai"
 
 
+def test_the_baseline_can_be_requested_without_calling_claude(app, client, kitchen):
+    """planner=baseline returns the deterministic plan with no fallback reason and no AI call."""
+    app.state.planner_config = None
+    expected = plan(client).json()["meals"]
+    fake = use_planner(app, submit([kitchen["beans"]]))
+
+    body = plan(client, planner="baseline").json()
+
+    assert body["source"] == "baseline"
+    assert body["fallback_reason"] is None
+    assert body["explanation"] is None
+    assert body["meals"] == expected
+    assert fake.requests == []
+
+
+def test_requesting_the_baseline_does_not_use_up_the_daily_limit(app, client, kitchen):
+    """Baseline requests are not counted against the AI cap."""
+    use_planner(app, submit([kitchen["beans"]]), limit=1)
+    plan(client, planner="baseline")
+    assert plan(client).json()["source"] == "ai"
+
+
 @pytest.mark.parametrize("body", [
     {"meal_count": 0},
     {"meal_count": 6},
@@ -183,6 +205,7 @@ def test_requests_without_ai_do_not_use_up_the_daily_limit(app, client, kitchen)
     {"meal_count": 1, "servings_per_meal": 0},
     {"meal_count": 1, "preference": "x" * 301},
     {"meal_count": 1, "budget": 5},
+    {"meal_count": 1, "planner": "claude"},
     {},
 ])
 def test_invalid_requests_are_rejected(app, client, body):

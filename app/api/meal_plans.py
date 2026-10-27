@@ -32,6 +32,10 @@ class MealPlanCreate(BaseModel):
         default=None, max_length=300, description="Free text for the AI planner, e.g. 'light'."
     )
     as_of: date | None = Field(default=None, description="Defaults to today on the server.")
+    planner: Literal["ai", "baseline"] = Field(
+        default="ai",
+        description="'baseline' asks for FridgeFit's deterministic plan and never calls Claude.",
+    )
 
 
 class IngredientAmountResponse(BaseModel):
@@ -179,7 +183,8 @@ def create_meal_plan(
 
     Nothing is written: the plan is a proposal. The AI plan is returned only when FridgeFit's
     own checks pass; otherwise the baseline plan comes back with a coarse ``fallback_reason``.
-    AI or provider failures never turn into an error response.
+    AI or provider failures never turn into an error response. ``planner="baseline"`` returns
+    the baseline plan directly, whatever the AI configuration, without a ``fallback_reason``.
 
     Args:
         body: The planning request.
@@ -201,9 +206,13 @@ def create_meal_plan(
     ))
     state = request.app.state
     config, client = state.planner_config, state.planner_client
+    if body.planner == "baseline":
+        # Asked for, not a fallback: free, no Claude call, and nothing counted against the cap.
+        result = baseline_result(snapshot, "baseline requested", None)
+        code = None
     # Only attempts that would call Claude count. The day is the server's, not the request's
     # as_of, so changing as_of cannot get around the cap.
-    if config is not None and client is not None and not state.planner_limit.try_take(
+    elif config is not None and client is not None and not state.planner_limit.try_take(
         date.today()
     ):
         limit = state.planner_limit.limit
