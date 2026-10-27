@@ -7,6 +7,7 @@ import {
   type MealLog,
   type MealPlan,
   type PlannedMeal,
+  type Planner,
 } from './api'
 import { formatQuantity } from './format'
 import LogMeal from './LogMeal'
@@ -137,7 +138,8 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
   const [mealCount, setMealCount] = useState('2')
   const [maxPrep, setMaxPrep] = useState('')
   const [preference, setPreference] = useState('')
-  const [planning, setPlanning] = useState(false)
+  // Which planner a request is running for, or null when none is.
+  const [planning, setPlanning] = useState<Planner | null>(null)
   const [error, setError] = useState<string | null>(null)
   // `mealsLogged` is the dashboard's count when the plan was requested; `eaten` counts plan
   // meals logged in order since. Any other log moves the dashboard's count past their sum.
@@ -168,8 +170,13 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
     onMealLogged(meal, servings)
   }
 
-  async function handleSubmit(event: FormEvent) {
+  // Enter in a field submits the form, which plans with Claude like the first button.
+  function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    void requestPlan('ai')
+  }
+
+  async function requestPlan(planner: Planner) {
     const count = parseWhole(mealCount, 1, 5)
     const prep = parseWhole(maxPrep, 1, 240)
     if (count == null) {
@@ -182,19 +189,20 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
     }
     // Taken before the request: a meal logged while planning makes this plan stale too.
     const requestedAt = mealsLogged
-    setPlanning(true)
+    setPlanning(planner)
     setError(null)
     try {
       const plan = await planMeals({
         meal_count: count,
         max_prep_minutes: prep,
         preference: preference.trim() || null,
+        planner,
       })
       setResult({ plan, mealsLogged: requestedAt, eaten: 0 })
     } catch (failure) {
       setError((failure as Error).message)
     } finally {
-      setPlanning(false)
+      setPlanning(null)
     }
   }
 
@@ -210,7 +218,7 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
             min="1"
             max="5"
             value={mealCount}
-            disabled={planning}
+            disabled={planning !== null}
             onChange={(event) => setMealCount(event.target.value)}
           />
         </label>
@@ -223,7 +231,7 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
             max="240"
             placeholder="Any"
             value={maxPrep}
-            disabled={planning}
+            disabled={planning !== null}
             onChange={(event) => setMaxPrep(event.target.value)}
           />
         </label>
@@ -234,23 +242,33 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
             maxLength={300}
             placeholder="e.g. something light"
             value={preference}
-            disabled={planning}
+            disabled={planning !== null}
             onChange={(event) => setPreference(event.target.value)}
           />
         </label>
-        <button type="submit" disabled={planning}>
-          {planning ? 'Planning…' : 'Plan'}
-        </button>
+        <div className="form-actions">
+          <button type="submit" disabled={planning !== null}>
+            {planning === 'ai' ? 'Planning…' : 'Plan with Claude'}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={planning !== null}
+            onClick={() => void requestPlan('baseline')}
+          >
+            {planning === 'baseline' ? 'Planning…' : "Plan with FridgeFit's rules"}
+          </button>
+        </div>
       </form>
-      {planning && <p className="muted">This can take up to a minute.</p>}
+      {planning === 'ai' && <p className="muted">This can take up to a minute.</p>}
       {error && <p className="error-text">{error}</p>}
-      {result && !planning && stale && (
+      {result && planning === null && stale && (
         <p className="muted plan-stale">
           A meal was logged that this plan did not include, so its stock and macros are out of
           date. Plan again for an updated one.
         </p>
       )}
-      {result && !planning && !stale && (
+      {result && planning === null && !stale && (
         <PlanResult
           plan={result.plan}
           eaten={result.eaten}

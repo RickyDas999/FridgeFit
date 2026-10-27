@@ -89,10 +89,14 @@ export type ConfirmResult =
   | { status: 'logged'; meal: MealLog; replayed: boolean }
   | { status: 'shortfall'; shortfalls: Shortfall[] }
 
+export type Planner = 'ai' | 'baseline'
+
 export type PlanRequest = {
   meal_count: number
   max_prep_minutes: number | null
   preference: string | null
+  // 'baseline' asks for FridgeFit's own plan; Claude is not called.
+  planner: Planner
 }
 
 export type FallbackReason = 'ai_disabled' | 'ai_failed' | 'ai_plan_invalid' | 'ai_limit'
