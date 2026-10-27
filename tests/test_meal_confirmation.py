@@ -1,7 +1,11 @@
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
 import pytest
+from sqlalchemy import event, make_url, text
+from sqlalchemy.orm import sessionmaker
 
 from app.domain.meal_confirmation import InsufficientInventoryError, confirm_meal
 from app.errors import InvalidInputError
@@ -352,4 +356,70 @@ def test_failed_confirmation_does_not_use_up_its_idempotency_key(session):
     )
 
     assert meal_log.idempotency_key == key
+    assert session.query(MealLog).count() == 1
+
+
+def test_concurrent_confirmations_cannot_both_use_the_same_stock(session, empty_database_url):
+    """A confirmation racing another for the same batch waits, then sees what the other used."""
+    if make_url(empty_database_url).get_backend_name() != "postgresql":
+        pytest.skip("needs PostgreSQL (TEST_DATABASE_URL): SQLite has no row locks")
+    chicken = make_ingredient()
+    recipe = make_recipe((chicken, 200, IngredientRole.PRIMARY))
+    batch = make_batch(chicken, 300)
+    session.add_all([recipe, batch])
+    session.commit()
+    engine = session.get_bind()
+    open_session = sessionmaker(bind=engine)
+
+    def confirm_second():
+        """Confirm the same meal in another session, from a worker thread.
+
+        Returns:
+            The committed MealLog.
+        """
+        with open_session() as second:
+            return confirm_meal(
+                second, second.get(Recipe, recipe.id), servings=2, consumed_at=CONSUMED_AT
+            )
+
+    def second_is_waiting_on_a_lock():
+        """Report whether any other connection is blocked on a row lock.
+
+        Returns:
+            True if a backend in this database is waiting on a lock.
+        """
+        # A new connection per check: PostgreSQL freezes pg_stat_activity for a transaction.
+        with engine.connect() as watcher:
+            return watcher.scalar(text(
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+            )) > 0
+
+    with ThreadPoolExecutor(max_workers=1) as pool, open_session() as first:
+        futures = []
+
+        def start_second_then_wait(_session):
+            """Just before the first confirmation commits, start the second and let it race.
+
+            The first has read its stock but not written it. With the lock, the second blocks
+            on that read until the commit; without it, the second reads the same 300 g.
+
+            Args:
+                _session: The committing session; unused.
+            """
+            futures.append(pool.submit(confirm_second))
+            deadline = time.monotonic() + 5
+            while not futures[0].done() and time.monotonic() < deadline:
+                if second_is_waiting_on_a_lock():
+                    return
+                time.sleep(0.05)
+
+        event.listen(first, "before_commit", start_second_then_wait)
+        confirm_meal(first, first.get(Recipe, recipe.id), servings=2, consumed_at=CONSUMED_AT)
+
+        with pytest.raises(InsufficientInventoryError):
+            futures[0].result(timeout=10)
+
+    session.expire_all()
+    assert batch.quantity_remaining == 100
     assert session.query(MealLog).count() == 1

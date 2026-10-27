@@ -21,7 +21,10 @@ FridgeFit is a single-user application in V1:
 - low concurrency;
 - small dataset.
 
-Concurrent writes are not currently a meaningful concern.
+Concurrent writes are rare, but they must not corrupt data. Confirming a meal locks the
+inventory batches it draws from until it commits (`SELECT ... FOR UPDATE`, in id order), so a
+second confirmation at the same moment waits and then sees the stock the first one left. SQLite
+ignores the lock; production runs PostgreSQL.
 
 ## Stack
 

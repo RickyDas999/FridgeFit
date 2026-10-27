@@ -1,11 +1,13 @@
 import uuid
+from collections import defaultdict
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.recipe_consumption import plan_recipe_consumption
 from app.domain.recipe_macros import calculate_recipe_macros
-from app.persistence.models import MealLog, MealLogIngredient, Recipe
+from app.persistence.models import InventoryBatch, MealLog, MealLogIngredient, Recipe
 
 
 class InsufficientInventoryError(Exception):
@@ -68,11 +70,7 @@ def confirm_meal(
         InsufficientInventoryError: If any ingredient is short and
             ``allow_shortfall`` is False.
     """
-    consumption = plan_recipe_consumption(
-        recipe,
-        servings,
-        {line.ingredient_id: line.ingredient.batches for line in recipe.recipe_ingredients},
-    )
+    consumption = plan_recipe_consumption(recipe, servings, _lock_stock(session, recipe))
     if consumption.shortfalls and not allow_shortfall:
         raise InsufficientInventoryError(consumption.shortfalls)
 
@@ -105,3 +103,38 @@ def confirm_meal(
 
     session.commit()
     return meal_log
+
+
+def _lock_stock(session: Session, recipe: Recipe) -> dict[int, list[InventoryBatch]]:
+    """Load the recipe's in-stock batches, locking them until this session commits.
+
+    Without the lock, two confirmations at once could both read the same quantity, both pass
+    the shortfall check, and the later commit would overwrite the earlier one's decrement. With
+    it, the second waits for the first to commit and then reads what the first left. Rows are
+    locked in id order, so two confirmations never each hold a row the other is waiting for.
+    SQLite ignores the lock; production runs PostgreSQL.
+
+    Args:
+        session: The session whose transaction holds the locks.
+        recipe: The recipe whose ingredients' batches are locked.
+
+    Returns:
+        Mapping of ``ingredient_id`` to its batches with stock remaining.
+    """
+    locked = session.scalars(
+        select(InventoryBatch)
+        .where(
+            InventoryBatch.ingredient_id.in_(
+                line.ingredient_id for line in recipe.recipe_ingredients
+            ),
+            InventoryBatch.quantity_remaining > 0,
+        )
+        .order_by(InventoryBatch.id)
+        .with_for_update()
+        # Batches this session already loaded would otherwise keep their pre-lock quantities.
+        .execution_options(populate_existing=True)
+    )
+    batches_by_ingredient = defaultdict(list)
+    for batch in locked:
+        batches_by_ingredient[batch.ingredient_id].append(batch)
+    return batches_by_ingredient
