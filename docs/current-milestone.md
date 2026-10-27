@@ -80,15 +80,19 @@ Milestone 8 slices:
 | 3 | A "Claude \| FridgeFit's rules" switch between the latest plan from each planner, each showing the inputs it was planned for | Implemented |
 | 4 | Deployed check, README, and closeout | Implemented |
 
-**Active milestone: 9 — Grocery Entry.** A small product-polish slice: add groceries to the
-fridge from the dashboard, choosing among ingredients that already exist, through the existing
-`GET /ingredients` and `POST /inventory/batches`. No new endpoint, model, or backend code.
-Creating or editing ingredients, nutrition lookup, and other kitchen management stay out of
-scope.
+9. **Grocery Entry** (completed 2026-10-27): a small product-polish slice. Add groceries to the
+   fridge from the dashboard, choosing among ingredients that already exist, through the
+   existing `GET /ingredients` and `POST /inventory/batches`. No new endpoint, model, or backend
+   code. Creating or editing ingredients, nutrition lookup, and other kitchen management stay
+   out of scope. Exercised on the deployed site: see Deployed grocery entry below.
+
+Milestone 9 slices:
 
 | Slice | Scope | Status |
 |---|---|---|
-| 1 | "+ Add groceries" in "In the fridge": existing-ingredient dropdown, quantity with its unit, optional use-by date; dashboard refetch and plans marked out of date on success | Implemented (deployed check pending) |
+| 1 | "+ Add groceries" in "In the fridge": existing-ingredient dropdown, quantity with its unit, optional use-by date; dashboard refetch and plans marked out of date on success | Implemented |
+
+No milestone is active; the next one has not been approved yet.
 
 Milestone 6 slices:
 
@@ -862,6 +866,25 @@ demo data, with 2 meals, no prep limit, and the preference "no rice today":
 - The "Claude | FridgeFit's rules" switch appeared once both plans existed and showed either
   instantly. Logging the omelette from Claude's plan marked it "(eaten)", and the rules plan
   then showed it was out of date.
+
+### Deployed grocery entry (Milestone 9)
+
+Checked by the developer on `https://fridgefit-3f2a.onrender.com` on 2026-10-27:
+
+- Adding 200 g of Greek yogurt with a use-by date of 2026-10-29 showed "Added 200 g greek
+  yogurt to the fridge.", and "In the fridge" went from 400 g to 600 g. Server log:
+  `POST /inventory/batches` → 201. The stock was still there after reloading the page.
+- "What to make" refreshed after an add: adding 100 g of salmon due that day moved the salmon
+  recipe from last place to second.
+- A quantity of 0 was refused with "Enter a quantity above 0." and nothing was sent.
+- The unit beside the quantity matched each ingredient: "count" (banana), "grams" (black
+  beans), "milliliters" (milk).
+- With a Claude plan and a FridgeFit's-rules plan on screen, adding groceries marked both out
+  of date.
+- The static site did not auto-deploy the frontend commit at first; the API did. Most likely
+  cause: the pull request was rebase-merged, its last commit changed only docs, and the static
+  site (`rootDir: frontend`) auto-deploys only for changes under `frontend/`. The check ran once
+  the site was serving the new bundle.
 
 ### Demo seed (`scripts/seed_demo.py`)
 
