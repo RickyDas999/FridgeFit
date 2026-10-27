@@ -92,7 +92,17 @@ Milestone 9 slices:
 |---|---|---|
 | 1 | "+ Add groceries" in "In the fridge": existing-ingredient dropdown, quantity with its unit, optional use-by date; dashboard refetch and plans marked out of date on success | Implemented |
 
-No milestone is active; the next one has not been approved yet.
+**Active milestone: 10 — Concurrency Hardening.** Make concurrent writes safe where they could
+leave wrong data or a misleading error: a lost update to inventory stock, duplicate nutrition
+goals for one date, and uniqueness races that surface as 500 instead of 409. No new endpoint and
+no API contract change.
+
+| Slice | Scope | Status |
+|---|---|---|
+| 1 | Meal confirmation locks the batches it draws from, so two confirmations at once cannot both use the same stock | Implemented |
+| 2 | Unique `NutritionGoal.effective_date` (Alembic migration); a concurrent duplicate gets 409 | Not started |
+| 3 | Ingredient-name, recipe-name, and meal-rating races return 409 instead of 500 | Not started |
+| 4 | Deployed check and closeout | Not started |
 
 Milestone 6 slices:
 
@@ -223,10 +233,6 @@ Known limits that remain:
 
 Deliberate shortcuts and cleanup, recorded so they are not lost:
 
-- Two confirmations with different keys can both read the same stock and overwrite each other's
-  decrement (lost update). Acceptable under the single-user assumption; revisit if that changes.
-  (The same-key race tests pass on PostgreSQL.)
-
 - A `fridgefit.db` created before Alembic has no migration version, so `alembic upgrade head`
   fails on it ("table already exists"); re-running the seed rebuilds it at the latest migration.
 - The migration parity test (`compare_metadata`) catches added/removed columns, tables, and unique
@@ -325,6 +331,12 @@ Implementation behavior worth knowing:
   - An optional `idempotency_key` is stored on the MealLog in the same commit. `confirm_meal`
     does not check for an existing key; that lookup belongs to the caller. A rejected
     confirmation writes nothing, so its key stays unused.
+  - The batches are read with `SELECT ... FOR UPDATE` (in id order, refreshing any already
+    loaded) and stay locked until the commit. A concurrent confirmation drawing on the same
+    batches waits, then plans against what the first left: it succeeds or gets the usual
+    shortfall, and no decrement is lost (Milestone 10 Slice 1). SQLite ignores the lock.
+    `test_concurrent_confirmations_cannot_both_use_the_same_stock` runs two threads on
+    PostgreSQL and is skipped on SQLite.
 
 ### Deterministic meal planning (`app/domain/meal_planning.py`, Milestone 7 Slice 1)
 
@@ -1017,7 +1029,7 @@ Checked by the developer on `https://fridgefit-3f2a.onrender.com` on 2026-10-27:
 
 ### Tests
 
-399 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+400 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:

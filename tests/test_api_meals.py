@@ -186,16 +186,16 @@ def test_losing_a_same_key_race_returns_the_winners_meal(app, client, stir_fry, 
         """Commit the same confirmation in another session, then run this request's own.
 
         This forces the race deterministically: this request has already looked up its key
-        (nothing) and loaded the stock, both before the winner commits, so it plans against the
-        same stock and its own commit is the one the unique constraint rejects.
+        (nothing) before the winner commits. Stock covers both meals, so this request passes its
+        shortfall check and its own commit is the one the unique constraint rejects.
         """
-        for line in recipe.recipe_ingredients:
-            line.ingredient.batches  # Load the stock the winner is about to use
         with app.state.session_factory() as other_session:
             other_recipe = other_session.get(Recipe, recipe.id)
             winner_ids.append(real_confirm_meal(other_session, other_recipe, **kwargs).id)
         return real_confirm_meal(session, recipe, **kwargs)
 
+    rice_id = next(i["id"] for i in client.get("/ingredients").json() if i["name"] == "Rice")
+    client.post("/inventory/batches", json={"ingredient_id": rice_id, "quantity": 150})
     monkeypatch.setattr(meal_workflow, "confirm_meal", winner_commits_first)
     loser = confirm(client, stir_fry, key=KEY)
 
@@ -206,7 +206,8 @@ def test_losing_a_same_key_race_returns_the_winners_meal(app, client, stir_fry, 
     assert [(i["name"], i["quantity"]) for i in loser.json()["ingredients"]] == [
         ("Chicken", 100), ("Rice", 150),
     ]
-    assert on_hand(client) == {"Chicken": 200, "Rice": 50}
+    # The rolled-back attempt's decrements are discarded: only the winner's meal consumed stock.
+    assert on_hand(client) == {"Chicken": 200, "Rice": 200}
     with app.state.session_factory() as session:
         assert session.scalar(select(func.count()).select_from(MealLog)) == 1
         assert session.scalar(select(func.count()).select_from(MealLogIngredient)) == 2
