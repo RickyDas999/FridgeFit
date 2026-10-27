@@ -26,10 +26,13 @@ React demo frontend. **Live demo: <https://fridgefit-3f2a.onrender.com>** (publi
   confirm meals (with optional idempotency keys for safe retries), and rate them.
 - **Demo frontend**: a dashboard that shows ranked recommendations and why they rank, logs meals,
   handles inventory shortfalls, and rates meals, all through the API.
+- **AI meal planning**: "Plan my day" asks Claude to plan the rest of today's meals from the
+  existing recipes, under hard limits; FridgeFit checks every plan and falls back to its own
+  deterministic planner. See [AI meal planning](#ai-meal-planning).
 - **Deployment**: the frontend, API, and PostgreSQL database run on Render, defined in
   `render.yaml`.
 
-Not built yet: authentication, and nutrition-data and Claude integrations. See
+Not built yet: authentication and a nutrition-data integration. See
 [`docs/current-milestone.md`](docs/current-milestone.md) for exactly what is implemented and what
 comes next.
 
@@ -130,11 +133,61 @@ A five-minute tour of the full flow. Start from a fresh seed so the numbers matc
 6. **A shortfall.** Choose "I ate this" again with 20 servings. FridgeFit lists what is short
    instead of logging it, and "Log anyway with what I have" logs only what is in the fridge.
 7. **Rate it.** Rate a meal under "Eaten today"; the recipe's enjoyment score updates.
+8. **Plan the day.** Under "Plan my day", plan 2 meals. Locally, with no planner configured,
+   the plan reads "Planned by FridgeFit's rules"; with one (see [AI meal
+   planning](#ai-meal-planning)) it reads "Planned by Claude" with Claude's explanation. Each meal
+   shows what it uses and what is left of today afterwards. Follow the plan in order: "I ate
+   this" on the first meal logs it and marks it eaten, and the next meal becomes loggable.
+   Logging anything the plan did not include (another recipe, or different servings) marks the
+   plan out of date.
 
 Worth mentioning under the hood: the backend owns every rule (ranking, availability, FEFO
 consumption, serving scaling); each "Log meal" sends an `Idempotency-Key`, so a retried request
 can never log a meal twice; and each request runs in its own database transaction, so a failed
 write changes nothing. To reset, run the seed script again.
+
+## AI meal planning
+
+`POST /meal-plans` (and "Plan my day" in the dashboard) plans the rest of today's meals: how many
+(1–5), an optional prep-time limit, and an optional preference in your own words ("something
+light"). Claude is a planning layer on top of FridgeFit's deterministic domain, not a chatbot:
+
+- **Read-only tools.** Claude sees the request, today's remaining macros, the stock, the ranked
+  recipes, and a simulation of any sequence of recipes, through three in-process tools. It cannot
+  write anything, and it can only choose existing recipes.
+- **Hard limits.** At most 6 model calls, 4,096 output tokens per call, and 60 seconds per plan.
+- **Deterministic checks.** Every proposed plan is replayed by FridgeFit (unknown or repeated
+  recipes, too many meals, the prep limit, eligibility, planning fewer meals than possible).
+  Claude gets one chance to fix a rejected plan. Every number shown comes from FridgeFit's own
+  simulation; only the explanation is Claude's words.
+- **Fallback.** If AI is off, fails, or its plan stays invalid, the response is FridgeFit's own
+  greedy plan, with a coarse `fallback_reason`: `ai_disabled`, `ai_failed`, `ai_plan_invalid`,
+  or `ai_limit`. The request still succeeds; provider errors, tokens, and cost go only to the
+  server log.
+- **Cost cap.** The endpoint is public, so `PLANNER_DAILY_LIMIT` caps AI attempts per server
+  day (50 in production); past it, plans come from FridgeFit's rules.
+
+With the deployed configuration (`claude-haiku-5-5` at low effort) a plan costs about $0.001
+and takes about 5–10 seconds. The evaluation that chose it, comparing three models with
+FridgeFit's own planner on seven scenarios, is in
+[`docs/current-milestone.md`](docs/current-milestone.md); it found clear gains in two scenarios
+and ties or tradeoffs in the rest.
+
+To plan with Claude locally, export a key without it appearing on screen or in shell history,
+then start the API with a model:
+
+```bash
+read -rs ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY
+PLANNER_MODEL=claude-haiku-5-5 .venv/bin/uvicorn app.api.main:app --reload
+```
+
+The evaluation harness runs FridgeFit's planner by default (free); `--live` adds Claude
+configurations and needs the key, with a spending cap:
+
+```bash
+.venv/bin/python scripts/evaluate_planner.py
+.venv/bin/python scripts/evaluate_planner.py --live --config claude-haiku-5-5:1 --max-cost-usd 0.05
+```
 
 ## Deployment
 
@@ -163,7 +216,8 @@ SQLite file `fridgefit.db`, and the tests use SQLite unless `TEST_DATABASE_URL` 
 ### Configuration
 
 Everything is declared in [`render.yaml`](render.yaml), a Render Blueprint. No secrets are
-committed: Render links `DATABASE_URL` from the database itself.
+committed: Render links `DATABASE_URL` from the database itself, and `ANTHROPIC_API_KEY` is
+entered in the Render dashboard.
 
 | Variable | Service | Purpose |
 |---|---|---|
@@ -172,6 +226,10 @@ committed: Render links `DATABASE_URL` from the database itself.
 | `TZ` | API | `America/New_York`. Stored times and "today" are the user's local time; Render's clock is UTC. |
 | `PORT` | API | Set by Render; Uvicorn binds to it. |
 | `PYTHON_VERSION` | API | `3.12`, as tested in CI. |
+| `PLANNER_MODEL` | API | `claude-haiku-5-5`. The Claude model for meal planning; unset means AI planning is off. |
+| `PLANNER_EFFORT` | API | `low` (the default). One of `low`, `medium`, `high`, `xhigh`, `max`; anything else stops startup. |
+| `PLANNER_DAILY_LIMIT` | API | `50`. AI planning attempts per server day; unset means no limit, `0` turns AI planning off. |
+| `ANTHROPIC_API_KEY` | API | Secret, set only in the Render dashboard (`sync: false`). Unset means AI planning is off. |
 | `VITE_API_BASE_URL` | Static site | The API's URL, baked into the JavaScript at build time (public). |
 | `NODE_VERSION` | Static site | `22`, as in CI. |
 
@@ -243,6 +301,7 @@ Verified on Render, or locally against PostgreSQL where noted:
 | `POST /recipes/{recipe_id}/confirm` | Log a meal and consume its ingredients; send an `Idempotency-Key` header to make retries safe |
 | `GET /meal-logs?consumed_on=` | Meals eaten on a day |
 | `POST /meal-logs/{meal_log_id}/feedback` | Rate a meal 1–5 |
+| `POST /meal-plans` | Plan the rest of today's meals with Claude, or FridgeFit's planner as the fallback; writes nothing |
 
 Dates are `YYYY-MM-DD` and default to today; datetimes are local time without a timezone.
 
@@ -255,11 +314,12 @@ app/
 ├── errors.py       shared InvalidInputError
 ├── persistence/    database setup, enums, SQLAlchemy models
 ├── domain/         deterministic business logic and input validation
-├── application/    thin workflows combining persistence and domain logic
+├── application/    thin workflows combining persistence and domain logic; the AI planner
+├── evaluation/     planner evaluation: scenarios, metrics, price estimates
 └── api/            FastAPI app, routes, and request/response schemas
 frontend/           React + TypeScript + Vite UI (talks to the API over HTTP)
 tests/              pytest suite, run against SQLite (or PostgreSQL via TEST_DATABASE_URL)
-scripts/            developer and CI tooling (demo seed, AI review helper)
+scripts/            developer and CI tooling (demo seed, planner evaluation, AI review helper)
 docs/               architecture, domain rules, and current status
 ```
 
