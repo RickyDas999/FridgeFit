@@ -73,7 +73,7 @@ no key, and no share of the daily AI cap.
 | Slice | Scope | Status |
 |---|---|---|
 | 1 | `planner: "ai" \| "baseline"` on `POST /meal-plans` (default `"ai"`, unchanged); `"baseline"` returns the baseline plan with `fallback_reason` null | Implemented |
-| 2 | "Plan with Claude" and "Plan with FridgeFit's rules" buttons in "Plan my day"; either plan can be followed and logged in order | Not started |
+| 2 | "Plan with Claude" and "Plan with FridgeFit's rules" buttons in "Plan my day"; either plan can be followed and logged in order | Implemented |
 | 3 | Deployed check, README, and closeout | Not started |
 
 Milestone 6 slices:
@@ -867,8 +867,9 @@ on the aged demo data as it was (no refresh):
   posts to `/recipes/{id}/confirm` with a caller-supplied `Idempotency-Key` and returns
   `logged` (201, or 200 when replayed) or `shortfall` (409); other errors become readable
   messages. `rateMeal()` posts to `/meal-logs/{id}/feedback` and returns `rated` or
-  `already_rated` (409). `planMeals()` posts to `/meal-plans` (meal count, max prep, preference;
-  servings and date are left to the server's defaults) and returns the plan.
+  `already_rated` (409). `planMeals()` posts to `/meal-plans` (meal count, max prep, preference,
+  and `planner`: `ai` or `baseline`; servings and date are left to the server's defaults) and
+  returns the plan.
 - `src/useResource.ts`: the `useResource` hook (loading/error/ready for one request, ignoring
   late responses). A `reloadToken` argument refetches while keeping the current data on
   screen. `src/format.ts`: display formatting (units, 0–100 scores, times, and
@@ -904,8 +905,12 @@ on the aged demo data as it was (no refresh):
   score update.
 - `src/MealPlanner.tsx` (Milestone 7 Slice 8): "Plan my day", above "What to make" in the main
   column. A form: meals (1–5, default 2), optional max prep minutes (1–240), optional preference
-  (at most 300 characters), checked before sending. The button reads "Planning…" with "This can
-  take up to a minute." while the request runs. The result shows "Planned by Claude" with
+  (at most 300 characters), checked before sending. Two buttons (Milestone 8): "Plan with
+  Claude" (also what Enter does) and "Plan with FridgeFit's rules", which asks for the baseline
+  plan whatever the AI configuration. Both are disabled while either request runs; the clicked
+  one reads "Planning…", and only a Claude request adds "This can take up to a minute." One
+  plan is shown at a time, so comparing means planning with one and then the other; the
+  preference is sent either way, but only Claude reads it. The result shows "Planned by Claude" with
   Claude's explanation, or "Planned by FridgeFit's rules" with a plain sentence for
   `ai_limit`, `ai_failed`, or `ai_plan_invalid` (none for `ai_disabled`); then each meal in
   order with prep time, calories and protein, ingredients used, and shortages in amber; and
