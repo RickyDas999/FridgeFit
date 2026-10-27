@@ -74,7 +74,8 @@ no key, and no share of the daily AI cap.
 |---|---|---|
 | 1 | `planner: "ai" \| "baseline"` on `POST /meal-plans` (default `"ai"`, unchanged); `"baseline"` returns the baseline plan with `fallback_reason` null | Implemented |
 | 2 | "Plan with Claude" and "Plan with FridgeFit's rules" buttons in "Plan my day"; either plan can be followed and logged in order | Implemented |
-| 3 | Deployed check, README, and closeout | Not started |
+| 3 | A "Claude \| FridgeFit's rules" switch between the latest plan from each planner, each showing the inputs it was planned for | Implemented |
+| 4 | Deployed check, README, and closeout | Not started |
 
 Milestone 6 slices:
 
@@ -909,8 +910,13 @@ on the aged demo data as it was (no refresh):
   Claude" (also what Enter does) and "Plan with FridgeFit's rules", which asks for the baseline
   plan whatever the AI configuration. Both are disabled while either request runs; the clicked
   one reads "Planning…", and only a Claude request adds "This can take up to a minute." One
-  plan is shown at a time, so comparing means planning with one and then the other; the
-  preference is sent either way, but only Claude reads it. The result shows "Planned by Claude" with
+  plan is shown at a time; the preference is sent either way, but only Claude reads it. The
+  latest plan from each button is kept (a Claude request that fell back stays under Claude),
+  each with a "Planned for …" line naming its inputs (meals, prep limit, preference), and once
+  both exist a "Claude | FridgeFit's rules" switch shows one or the other without a new
+  request; a new plan from either button replaces that side and is shown. Each kept plan tracks
+  its own eaten meals, so logging from one plan is a log the other did not include, and the
+  other goes out of date. The result shows "Planned by Claude" with
   Claude's explanation, or "Planned by FridgeFit's rules" with a plain sentence for
   `ai_limit`, `ai_failed`, or `ai_plan_invalid` (none for `ai_disabled`); then each meal in
   order with prep time, calories and protein, ingredients used, and shortages in amber; and

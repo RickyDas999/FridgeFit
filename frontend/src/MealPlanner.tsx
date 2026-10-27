@@ -125,6 +125,25 @@ function PlanResult(props: {
 }
 
 /**
+ * A plan kept on the page. `mealsLogged` is the dashboard's count when the plan was requested;
+ * `eaten` counts plan meals logged in order since, so any other log moves the dashboard's count
+ * past their sum. `inputs` describes what the plan was requested for.
+ */
+type KeptPlan = { plan: MealPlan; mealsLogged: number; eaten: number; inputs: string }
+
+const PLANNER_NAMES: Record<Planner, string> = { ai: 'Claude', baseline: "FridgeFit's rules" }
+
+/** Describe a request's inputs, e.g. '2 meals, any prep, "no rice today"'. */
+function describeInputs(count: number, prep: number | null, preference: string | null): string {
+  const parts = [
+    `${count} meal${count === 1 ? '' : 's'}`,
+    prep === null ? 'any prep' : `up to ${prep} min prep`,
+  ]
+  if (preference) parts.push(`"${preference}"`)
+  return parts.join(', ')
+}
+
+/**
  * "Plan my day": ask the API for the rest of today's meals and show the plan it returns.
  *
  * The plan is simulated meal by meal, so each meal's numbers already assume the ones before it
@@ -132,6 +151,9 @@ function PlanResult(props: {
  * meals are logged one at a time and marked eaten. `mealsLogged` counts meals logged anywhere on
  * the dashboard; any other log (from the recommendations, or at different servings) is
  * something the plan did not simulate, so it is replaced by a note to plan again.
+ *
+ * The latest plan from each planner is kept, and a switch shows one at a time once both exist.
+ * Logging from one plan is a log the other did not include, so the other goes out of date.
  */
 function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged }) {
   const { mealsLogged, onMealLogged } = props
@@ -141,13 +163,10 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
   // Which planner a request is running for, or null when none is.
   const [planning, setPlanning] = useState<Planner | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // `mealsLogged` is the dashboard's count when the plan was requested; `eaten` counts plan
-  // meals logged in order since. Any other log moves the dashboard's count past their sum.
-  const [result, setResult] = useState<{
-    plan: MealPlan
-    mealsLogged: number
-    eaten: number
-  } | null>(null)
+  // Keyed by the button used; a Claude request that fell back still sits under 'ai'.
+  const [kept, setKept] = useState<Record<Planner, KeptPlan | null>>({ ai: null, baseline: null })
+  const [shown, setShown] = useState<Planner>('ai')
+  const result = kept[shown]
   const stale = result !== null && result.mealsLogged + result.eaten !== mealsLogged
 
   function handlePlannedMealLogged(
@@ -159,14 +178,15 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
     // A functional update reads the plan on screen now, not when "Log meal" was clicked: a new
     // plan may have arrived while the log was in flight, and it must not be overwritten. Only
     // the plan the meal came from advances; a newer one stays and shows as out of date.
-    setResult((current) =>
-      current !== null &&
-      current.plan === plan &&
-      index === current.eaten &&
-      servings === plan.meals[index].servings
+    function advance(current: KeptPlan | null): KeptPlan | null {
+      return current !== null &&
+        current.plan === plan &&
+        index === current.eaten &&
+        servings === plan.meals[index].servings
         ? { ...current, eaten: current.eaten + 1 }
-        : current,
-    )
+        : current
+    }
+    setKept((current) => ({ ai: advance(current.ai), baseline: advance(current.baseline) }))
     onMealLogged(meal, servings)
   }
 
@@ -198,7 +218,12 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
         preference: preference.trim() || null,
         planner,
       })
-      setResult({ plan, mealsLogged: requestedAt, eaten: 0 })
+      const inputs = describeInputs(count, prep, preference.trim() || null)
+      setKept((current) => ({
+        ...current,
+        [planner]: { plan, mealsLogged: requestedAt, eaten: 0, inputs },
+      }))
+      setShown(planner)
     } catch (failure) {
       setError((failure as Error).message)
     } finally {
@@ -262,6 +287,23 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
       </form>
       {planning === 'ai' && <p className="muted">This can take up to a minute.</p>}
       {error && <p className="error-text">{error}</p>}
+      {kept.ai && kept.baseline && planning === null && (
+        <div className="plan-switch" role="group" aria-label="Show the plan from">
+          {(['ai', 'baseline'] as const).map((planner) => (
+            <button
+              key={planner}
+              type="button"
+              aria-pressed={shown === planner}
+              onClick={() => setShown(planner)}
+            >
+              {PLANNER_NAMES[planner]}
+            </button>
+          ))}
+        </div>
+      )}
+      {result && planning === null && (
+        <p className="muted plan-inputs">Planned for {result.inputs}</p>
+      )}
       {result && planning === null && stale && (
         <p className="muted plan-stale">
           A meal was logged that this plan did not include, so its stock and macros are out of
