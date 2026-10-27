@@ -1,4 +1,8 @@
 import pytest
+from sqlalchemy import event
+
+from app.persistence.enums import IngredientRole
+from app.persistence.models import Recipe, RecipeIngredient
 
 
 def add_ingredient(client, name, calories, protein, carbs, fat):
@@ -168,6 +172,36 @@ def test_duplicate_recipe_name_is_rejected_with_409(client, stir_fry):
     assert response.status_code == 409
     assert response.json() == {"detail": "Recipe 'Chicken stir fry' already exists"}
     assert len(client.get("/recipes").json()) == 1
+
+
+def test_losing_a_same_name_race_is_rejected_with_409(app, client, stir_fry):
+    """A recipe whose name another request commits after the duplicate check gets 409."""
+
+    def other_request_commits_first(*_args):
+        """Commit a recipe with the same name in another session, as a concurrent request would.
+
+        Runs as this request flushes its insert: after its duplicate check found nothing.
+
+        Args:
+            *_args: The event's arguments; unused.
+        """
+        with app.state.session_factory() as other_session:
+            other_session.add(Recipe(
+                name=stir_fry["name"], instructions=["Cook"], prep_minutes=10, servings=1,
+                recipe_ingredients=[RecipeIngredient(
+                    ingredient_id=stir_fry["ingredients"][0]["ingredient_id"],
+                    quantity=100,
+                    role=IngredientRole.PRIMARY,
+                )],
+            ))
+            other_session.commit()
+
+    event.listen(app.state.session_factory, "before_flush", other_request_commits_first, once=True)
+    response = client.post("/recipes", json=stir_fry)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Recipe 'Chicken stir fry' already exists"}
+    assert [recipe["prep_minutes"] for recipe in client.get("/recipes").json()] == [10]
 
 
 def test_listing_recipes_runs_a_fixed_number_of_queries(client, count_queries, stir_fry):

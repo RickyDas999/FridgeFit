@@ -3,6 +3,8 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.api.session import SessionDep
 from app.persistence.enums import CanonicalUnit
@@ -62,14 +64,36 @@ def create_ingredient(body: IngredientCreate, session: SessionDep) -> Ingredient
     Raises:
         HTTPException: 409 if an ingredient with the same name already exists.
     """
-    existing = session.scalar(select(Ingredient).where(Ingredient.name == body.name))
-    if existing is not None:
-        raise HTTPException(status_code=409, detail=f"Ingredient {body.name!r} already exists")
+    duplicate = HTTPException(status_code=409, detail=f"Ingredient {body.name!r} already exists")
+    if _ingredient_named(session, body.name) is not None:
+        raise duplicate
 
     ingredient = Ingredient(**body.model_dump(), nutrition_updated_at=datetime.now())
     session.add(ingredient)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # A concurrent request may have committed this name after the check above.
+        # The failed transaction must be rolled back before the session can query again. If no
+        # ingredient has the name, the violation was something else, so it stays an error.
+        session.rollback()
+        if _ingredient_named(session, body.name) is None:
+            raise
+        raise duplicate from None
     return IngredientResponse.model_validate(ingredient)
+
+
+def _ingredient_named(session: Session, name: str) -> Ingredient | None:
+    """Find the ingredient with a name.
+
+    Args:
+        session: An open database session.
+        name: The exact name to look up.
+
+    Returns:
+        The ingredient with that name, or None if there is none.
+    """
+    return session.scalar(select(Ingredient).where(Ingredient.name == name))
 
 
 @router.get("")

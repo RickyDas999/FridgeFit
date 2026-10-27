@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.application import meals as meal_workflow
@@ -309,6 +309,31 @@ def test_second_rating_is_rejected_with_409(client, stir_fry):
     meal_id = confirm(client, stir_fry).json()["id"]
     client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": 4})
 
+    response = client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": 1})
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": f"Meal log {meal_id} is already rated"}
+    meals = client.get("/meal-logs", params={"consumed_on": "2026-10-11"}).json()
+    assert meals[0]["rating"] == 4
+
+
+def test_losing_a_rating_race_is_rejected_with_409(app, client, stir_fry):
+    """A rating for a meal another request rates after the already-rated check gets 409."""
+    meal_id = confirm(client, stir_fry).json()["id"]
+
+    def other_request_commits_first(*_args):
+        """Commit a rating for the same meal in another session, as a concurrent request would.
+
+        Runs as this request flushes its insert: after its already-rated check found nothing.
+
+        Args:
+            *_args: The event's arguments; unused.
+        """
+        with app.state.session_factory() as other_session:
+            other_session.add(MealFeedback(meal_log_id=meal_id, rating=4))
+            other_session.commit()
+
+    event.listen(app.state.session_factory, "before_flush", other_request_commits_first, once=True)
     response = client.post(f"/meal-logs/{meal_id}/feedback", json={"rating": 1})
 
     assert response.status_code == 409

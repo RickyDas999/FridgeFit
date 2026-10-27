@@ -1,3 +1,10 @@
+from datetime import datetime
+
+from sqlalchemy import event
+
+from app.persistence.enums import CanonicalUnit
+from app.persistence.models import Ingredient
+
 CHICKEN = {
     "name": "Chicken breast",
     "canonical_unit": "gram",
@@ -39,6 +46,32 @@ def test_duplicate_name_is_rejected_with_409(client):
     response = client.post("/ingredients", json=CHICKEN)
 
     assert response.status_code == 409
+    assert len(client.get("/ingredients").json()) == 1
+
+
+def test_losing_a_same_name_race_is_rejected_with_409(app, client):
+    """An ingredient whose name another request commits after the duplicate check gets 409."""
+
+    def other_request_commits_first(*_args):
+        """Commit the same ingredient in another session, as a concurrent request would.
+
+        Runs as this request flushes its insert: after its duplicate check found nothing.
+
+        Args:
+            *_args: The event's arguments; unused.
+        """
+        with app.state.session_factory() as other_session:
+            other_session.add(Ingredient(
+                **{**CHICKEN, "canonical_unit": CanonicalUnit.GRAM},
+                nutrition_updated_at=datetime.now(),
+            ))
+            other_session.commit()
+
+    event.listen(app.state.session_factory, "before_flush", other_request_commits_first, once=True)
+    response = client.post("/ingredients", json=CHICKEN)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Ingredient 'Chicken breast' already exists"}
     assert len(client.get("/ingredients").json()) == 1
 
 
