@@ -245,11 +245,15 @@ def test_replies_that_cannot_continue_end_the_attempt(stop_reason, content, outc
         (anthropic.APIConnectionError(request=REQUEST), "provider_error"),
         (anthropic.RateLimitError("Rate limited", response=httpx2.Response(429, request=REQUEST),
                                   body=None), "provider_error"),
+        # A rejected API key (401): configured, so a call is made, but it cannot succeed.
+        (anthropic.AuthenticationError("Invalid API key",
+                                       response=httpx2.Response(401, request=REQUEST),
+                                       body=None), "provider_error"),
         (anthropic.APITimeoutError(request=REQUEST), "time_limit"),
     ],
 )
 def test_provider_failures_end_the_attempt_without_raising(error, outcome):
-    """Connection errors, rate limits, and timeouts are recorded outcomes, not exceptions."""
+    """Connection errors, rate limits, a bad key, and timeouts are outcomes, not exceptions."""
     attempt = run_ai_planner(snapshot(), CONFIG, FakeClient(error))
 
     assert attempt.outcome == outcome
