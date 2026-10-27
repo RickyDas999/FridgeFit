@@ -25,7 +25,7 @@ React demo frontend. **Live demo: <https://fridgefit-3f2a.onrender.com>** (publi
 - **HTTP API**: endpoints to stock the kitchen, add recipes and goals, get recommendations,
   confirm meals (with optional idempotency keys for safe retries), and rate them.
 - **Demo frontend**: a dashboard that shows ranked recommendations and why they rank, logs meals,
-  handles inventory shortfalls, and rates meals, all through the API.
+  handles inventory shortfalls, rates meals, and adds groceries, all through the API.
 - **AI meal planning**: "Plan my day" asks Claude to plan the rest of today's meals from the
   existing recipes, under hard limits; FridgeFit checks every plan and falls back to its own
   deterministic planner. See [AI meal planning](#ai-meal-planning).
@@ -133,7 +133,10 @@ A five-minute tour of the full flow. Start from a fresh seed so the numbers matc
 6. **A shortfall.** Choose "I ate this" again with 20 servings. FridgeFit lists what is short
    instead of logging it, and "Log anyway with what I have" logs only what is in the fridge.
 7. **Rate it.** Rate a meal under "Eaten today"; the recipe's enjoyment score updates.
-8. **Plan the day.** Under "Plan my day", enter 2 meals and a preference such as "no rice
+8. **Add groceries.** Under "In the fridge", choose "+ Add groceries", pick an ingredient (only
+   existing ones; the unit shows beside the quantity), enter an amount and optionally a use-by
+   date, and add it. The fridge, the ranking, and everything else refresh from the API.
+9. **Plan the day.** Under "Plan my day", enter 2 meals and a preference such as "no rice
    today". "Plan with FridgeFit's rules" returns FridgeFit's deterministic plan, which ignores
    the preference. "Plan with Claude" returns Claude's plan with its explanation when a planner
    is configured (see [AI meal planning](#ai-meal-planning)); locally without one, it falls back

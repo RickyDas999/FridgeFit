@@ -80,7 +80,15 @@ Milestone 8 slices:
 | 3 | A "Claude \| FridgeFit's rules" switch between the latest plan from each planner, each showing the inputs it was planned for | Implemented |
 | 4 | Deployed check, README, and closeout | Implemented |
 
-No milestone is active; the next one has not been approved yet.
+**Active milestone: 9 — Grocery Entry.** A small product-polish slice: add groceries to the
+fridge from the dashboard, choosing among ingredients that already exist, through the existing
+`GET /ingredients` and `POST /inventory/batches`. No new endpoint, model, or backend code.
+Creating or editing ingredients, nutrition lookup, and other kitchen management stay out of
+scope.
+
+| Slice | Scope | Status |
+|---|---|---|
+| 1 | "+ Add groceries" in "In the fridge": existing-ingredient dropdown, quantity with its unit, optional use-by date; dashboard refetch and plans marked out of date on success | Implemented (deployed check pending) |
 
 Milestone 6 slices:
 
@@ -895,7 +903,10 @@ demo data, with 2 meals, no prep limit, and the preference "no rice today":
   messages. `rateMeal()` posts to `/meal-logs/{id}/feedback` and returns `rated` or
   `already_rated` (409). `planMeals()` posts to `/meal-plans` (meal count, max prep, preference,
   and `planner`: `ai` or `baseline`; servings and date are left to the server's defaults) and
-  returns the plan.
+  returns the plan. `getIngredients()` (Milestone 9) reads `GET /ingredients` (only `id`,
+  `name`, and `canonical_unit` are typed), and `addInventoryBatch()` posts to
+  `/inventory/batches` with the ingredient, quantity, and optional use-by date, leaving the
+  purchase time to the server; errors become readable messages.
 - `src/useResource.ts`: the `useResource` hook (loading/error/ready for one request, ignoring
   late responses). A `reloadToken` argument refetches while keeping the current data on
   screen. `src/format.ts`: display formatting (units, 0–100 scores, times, and
@@ -952,9 +963,21 @@ demo data, with 2 meals, no prep limit, and the preference "no rice today":
   that moment. The plan is followed in order: only the next meal offers "I ate this", and
   logging it at the planned servings marks it eaten and keeps the rest, whose numbers already
   assume the earlier meals (the simulation and confirmation draw stock the same way, soonest
-  use-by first). The dashboard counts meals logged from anywhere on the page; a log the plan
-  did not simulate (from the recommendations, or at different servings) moves that count past
-  the plan's own, and the plan is replaced by a note to plan again.
+  use-by first). The dashboard counts kitchen changes (meals logged and, since Milestone 9,
+  groceries added) from anywhere on the page; a change the plan did not simulate (a meal from
+  the recommendations, different servings, or new groceries) moves that count past the plan's
+  own, and the plan is replaced by a note to plan again.
+- `src/AddGroceries.tsx` (Milestone 9): "+ Add groceries" under "In the fridge", shown even when
+  the fridge is empty ("The fridge is empty. Add groceries to start getting recommendations.").
+  It opens an inline form that loads `GET /ingredients` when opened: an ingredient dropdown in
+  the backend's name order (no free text), a quantity with the ingredient's unit spelled out
+  ("grams", "milliliters", "count"), and an optional native date input for the use-by date.
+  Usability checks only (an ingredient chosen, a quantity above 0); the backend validates
+  again. Fields are disabled while sending. On success the form closes, the dashboard shows
+  "Added 600 g chicken breast to the fridge." and refetches every section from the backend, and
+  any plan on screen goes out of date; on failure the form keeps its input and shows the
+  error. No idempotency key: `POST /inventory/batches` has none, so a retry after a failure that
+  the server had in fact saved would record the groceries twice.
 - Design pass (Slice 6): `src/index.css` is one token system (light and dark) following
   `architecture.md` § Visual design. Layout: the ranked list on a white "shelf" with the top
   pick set large; a sidebar with Today (calories left as the one large figure, meters for
@@ -1034,8 +1057,8 @@ with:
 
 ## Intentionally Unimplemented
 
-- Frontend data-entry screens: ingredients, groceries, recipes, nutrition goals, and manual
-  inventory correction (data comes from the seed script or the API)
+- Frontend data-entry screens other than adding groceries: ingredients, recipes, nutrition
+  goals, and manual inventory correction (data comes from the seed script or the API)
 - Manual macro-only meal creation, in the API or the frontend
 - Authentication and users
 - Nutrition-data API integration
