@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.session import SessionDep
 from app.domain.recipe_macros import calculate_recipe_macros
@@ -143,9 +144,9 @@ def create_recipe(body: RecipeCreate, session: SessionDep) -> RecipeResponse:
         HTTPException: 409 if a recipe with the same name already exists, or 404 if any
             referenced ingredient does not exist.
     """
-    existing = session.scalar(select(Recipe).where(Recipe.name == body.name))
-    if existing is not None:
-        raise HTTPException(status_code=409, detail=f"Recipe {body.name!r} already exists")
+    duplicate = HTTPException(status_code=409, detail=f"Recipe {body.name!r} already exists")
+    if _recipe_named(session, body.name) is not None:
+        raise duplicate
 
     ids = {line.ingredient_id for line in body.ingredients}
     found = set(session.scalars(select(Ingredient.id).where(Ingredient.id.in_(ids))))
@@ -167,8 +168,30 @@ def create_recipe(body: RecipeCreate, session: SessionDep) -> RecipeResponse:
         ],
     )
     session.add(recipe)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # A concurrent request may have committed this name after the check above.
+        # The failed transaction must be rolled back before the session can query again. If no
+        # recipe has the name, the violation was something else, so it stays an error.
+        session.rollback()
+        if _recipe_named(session, body.name) is None:
+            raise
+        raise duplicate from None
     return recipe_response(recipe)
+
+
+def _recipe_named(session: Session, name: str) -> Recipe | None:
+    """Find the recipe with a name.
+
+    Args:
+        session: An open database session.
+        name: The exact name to look up.
+
+    Returns:
+        The recipe with that name, or None if there is none.
+    """
+    return session.scalar(select(Recipe).where(Recipe.name == name))
 
 
 @router.get("")

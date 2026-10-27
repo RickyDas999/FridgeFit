@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, NaiveDatetime
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.session import SessionDep
@@ -227,10 +228,23 @@ def rate_meal(meal_log_id: int, body: FeedbackCreate, session: SessionDep) -> Fe
     meal_log = session.get(MealLog, meal_log_id)
     if meal_log is None:
         raise HTTPException(status_code=404, detail=f"Meal log {meal_log_id} not found")
+    already_rated = HTTPException(
+        status_code=409, detail=f"Meal log {meal_log_id} is already rated"
+    )
     if meal_log.feedback is not None:
-        raise HTTPException(status_code=409, detail=f"Meal log {meal_log_id} is already rated")
+        raise already_rated
 
     feedback = MealFeedback(meal_log=meal_log, rating=body.rating)
     session.add(feedback)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # A concurrent request may have rated this meal after the check above.
+        # The failed transaction must be rolled back before the session can query again; that
+        # also expires meal_log, so .feedback is read fresh. If the meal still has no rating,
+        # the violation was something else, so it stays an error.
+        session.rollback()
+        if meal_log.feedback is None:
+            raise
+        raise already_rated from None
     return FeedbackResponse.model_validate(feedback)

@@ -101,7 +101,7 @@ no API contract change.
 |---|---|---|
 | 1 | Meal confirmation locks the batches it draws from, so two confirmations at once cannot both use the same stock | Implemented |
 | 2 | Unique `NutritionGoal.effective_date` (Alembic migration); a concurrent duplicate gets 409 | Implemented |
-| 3 | Ingredient-name, recipe-name, and meal-rating races return 409 instead of 500 | Not started |
+| 3 | Ingredient-name, recipe-name, and meal-rating races return 409 instead of 500 | Implemented |
 | 4 | Deployed check and closeout | Not started |
 
 Milestone 6 slices:
@@ -662,6 +662,10 @@ raises for model or provider problems. It writes nothing.
 - Request schemas reject `Infinity`/`NaN` (`allow_inf_nan=False`), and request datetimes must be
   naive local time (timezone-aware values → 422), matching the stored datetimes and
   calendar-day logic.
+- Every 409 for an existing name, date, or rating also holds under a race (Milestone 10 Slices
+  2-3). Each route checks first, and a database unique constraint backs the check: when a
+  concurrent request commits the same value in between, this commit fails, the route rolls back,
+  finds the winner's row, and returns the same 409. Any other integrity error stays a 500.
 - Endpoints (the complete V1 surface):
   - `GET /health`: also runs `SELECT 1` to confirm the database is reachable.
   - `POST /ingredients` (201): `nutrition_updated_at` is set to now by the server. A name that
@@ -679,9 +683,7 @@ raises for model or provider problems. It writes nothing.
     includes its ingredient lines (name, unit, quantity, role), `macros` for the whole recipe
     (derived with `calculate_recipe_macros`), and `macros_per_serving` (`macros / servings`).
   - `POST /nutrition-goals` (201): goals are append-only history; the effective date may be in
-    the future. A second goal on the same effective date → 409, including one that loses a race:
-    the unique constraint rejects its commit, the route rolls back, finds the winner's goal, and
-    returns the same 409 (any other integrity error stays a 500).
+    the future. A second goal on the same effective date → 409.
   - `GET /nutrition-state?as_of=YYYY-MM-DD`: `as_of` defaults to today on the server's clock.
     Returns the applicable `goal` and `remaining` macros for that calendar day; both are null
     when no goal is effective yet (200, not an error).
@@ -1034,7 +1036,7 @@ Checked by the developer on `https://fridgefit-3f2a.onrender.com` on 2026-10-27:
 
 ### Tests
 
-402 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+405 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
