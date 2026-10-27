@@ -125,11 +125,11 @@ function PlanResult(props: {
 }
 
 /**
- * A plan kept on the page. `mealsLogged` is the dashboard's count when the plan was requested;
- * `eaten` counts plan meals logged in order since, so any other log moves the dashboard's count
- * past their sum. `inputs` describes what the plan was requested for.
+ * A plan kept on the page. `changesAtRequest` is the dashboard's kitchen-change count when the
+ * plan was requested; `eaten` counts plan meals logged in order since, so any other change moves
+ * the dashboard's count past their sum. `inputs` describes what the plan was requested for.
  */
-type KeptPlan = { plan: MealPlan; mealsLogged: number; eaten: number; inputs: string }
+type KeptPlan = { plan: MealPlan; changesAtRequest: number; eaten: number; inputs: string }
 
 const PLANNER_NAMES: Record<Planner, string> = { ai: 'Claude', baseline: "FridgeFit's rules" }
 
@@ -148,15 +148,16 @@ function describeInputs(count: number, prep: number | null, preference: string |
  *
  * The plan is simulated meal by meal, so each meal's numbers already assume the ones before it
  * were eaten. Following it in order (the next meal, at the planned servings) keeps it valid, so
- * meals are logged one at a time and marked eaten. `mealsLogged` counts meals logged anywhere on
- * the dashboard; any other log (from the recommendations, or at different servings) is
- * something the plan did not simulate, so it is replaced by a note to plan again.
+ * meals are logged one at a time and marked eaten. `kitchenChanges` counts meals logged and
+ * groceries added anywhere on the dashboard; any other change (a meal from the recommendations,
+ * different servings, or new groceries) is something the plan did not simulate, so it is
+ * replaced by a note to plan again.
  *
  * The latest plan from each planner is kept, and a switch shows one at a time once both exist.
  * Logging from one plan is a log the other did not include, so the other goes out of date.
  */
-function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged }) {
-  const { mealsLogged, onMealLogged } = props
+function MealPlanner(props: { kitchenChanges: number; onMealLogged: OnMealLogged }) {
+  const { kitchenChanges, onMealLogged } = props
   const [mealCount, setMealCount] = useState('2')
   const [maxPrep, setMaxPrep] = useState('')
   const [preference, setPreference] = useState('')
@@ -167,7 +168,7 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
   const [kept, setKept] = useState<Record<Planner, KeptPlan | null>>({ ai: null, baseline: null })
   const [shown, setShown] = useState<Planner>('ai')
   const result = kept[shown]
-  const stale = result !== null && result.mealsLogged + result.eaten !== mealsLogged
+  const stale = result !== null && result.changesAtRequest + result.eaten !== kitchenChanges
 
   function handlePlannedMealLogged(
     plan: MealPlan,
@@ -207,8 +208,8 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
       setError('Max prep time must be a whole number of minutes from 1 to 240, or empty.')
       return
     }
-    // Taken before the request: a meal logged while planning makes this plan stale too.
-    const requestedAt = mealsLogged
+    // Taken before the request: a change made while planning makes this plan stale too.
+    const requestedAt = kitchenChanges
     setPlanning(planner)
     setError(null)
     try {
@@ -221,7 +222,7 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
       const inputs = describeInputs(count, prep, preference.trim() || null)
       setKept((current) => ({
         ...current,
-        [planner]: { plan, mealsLogged: requestedAt, eaten: 0, inputs },
+        [planner]: { plan, changesAtRequest: requestedAt, eaten: 0, inputs },
       }))
       setShown(planner)
     } catch (failure) {
@@ -306,8 +307,8 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
       )}
       {result && planning === null && stale && (
         <p className="muted plan-stale">
-          A meal was logged that this plan did not include, so its stock and macros are out of
-          date. Plan again for an updated one.
+          A meal was logged or groceries were added since this plan was made, so its stock and
+          macros are out of date. Plan again for an updated one.
         </p>
       )}
       {result && planning === null && !stale && (

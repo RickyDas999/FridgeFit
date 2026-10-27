@@ -11,6 +11,7 @@ import {
   type Recommendation,
 } from './api'
 import { formatQuantity, formatScore, formatTime } from './format'
+import AddGroceries from './AddGroceries'
 import MealPlanner from './MealPlanner'
 import RateMeal from './RateMeal'
 import RecommendationDetail from './RecommendationDetail'
@@ -170,7 +171,7 @@ function RecommendationList(props: {
 
 function InventoryList({ items }: { items: InventoryItem[] }) {
   if (items.length === 0) {
-    return <p className="muted">The fridge is empty. Groceries added through the API show up here.</p>
+    return <p className="muted">The fridge is empty. Add groceries to start getting recommendations.</p>
   }
   return (
     <ul className="inventory">
@@ -218,8 +219,9 @@ function Dashboard() {
   // Bumped after a write so every section refetches.
   const [version, setVersion] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
-  // Meals logged from anywhere on the page; the planner uses it to retire an outdated plan.
-  const [mealsLogged, setMealsLogged] = useState(0)
+  // Meals logged and groceries added from anywhere on the page: changes to the stock or the day
+  // that a plan did not simulate. The planner uses it to retire an outdated plan.
+  const [kitchenChanges, setKitchenChanges] = useState(0)
 
   const nutrition = useResource(getNutritionState, version)
   const recommendations = useResource(getRecommendations, version)
@@ -229,7 +231,14 @@ function Dashboard() {
   function handleMealLogged(meal: MealLog, servings: number) {
     setNotice(`Logged ${meal.name}, ${servings} serving${servings === 1 ? '' : 's'}.`)
     setVersion((current) => current + 1)
-    setMealsLogged((current) => current + 1)
+    setKitchenChanges((current) => current + 1)
+  }
+
+  // New stock changes inventory, recommendations, and any plan on screen.
+  function handleGroceriesAdded(message: string) {
+    setNotice(message)
+    setVersion((current) => current + 1)
+    setKitchenChanges((current) => current + 1)
   }
 
   // A rating changes the meal's row and its recipe's enjoyment score, so refetch everything.
@@ -252,7 +261,7 @@ function Dashboard() {
       )}
       <div className="dashboard">
         <div className="main-column">
-          <MealPlanner mealsLogged={mealsLogged} onMealLogged={handleMealLogged} />
+          <MealPlanner kitchenChanges={kitchenChanges} onMealLogged={handleMealLogged} />
           <Section title="What to make" state={recommendations} className="shelf">
             {(items) => <RecommendationList items={items} onMealLogged={handleMealLogged} />}
           </Section>
@@ -265,7 +274,12 @@ function Dashboard() {
             {(items) => <MealList meals={items} onRated={handleRated} />}
           </Section>
           <Section title="In the fridge" state={inventory} className="side-section">
-            {(items) => <InventoryList items={items} />}
+            {(items) => (
+              <>
+                <InventoryList items={items} />
+                <AddGroceries onAdded={handleGroceriesAdded} />
+              </>
+            )}
           </Section>
         </aside>
       </div>
