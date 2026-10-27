@@ -305,6 +305,14 @@ input {
   font-weight: 700;
 }
 
+.planned-meals li > :last-child {
+  margin-top: var(--space-2);
+}
+
+.plan-stale {
+  margin-top: var(--space-4);
+}
+
 /* ---- Recommendations ---- */
 
 .recommendations {

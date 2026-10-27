@@ -218,6 +218,8 @@ function Dashboard() {
   // Bumped after a write so every section refetches.
   const [version, setVersion] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
+  // Meals logged from anywhere on the page; the planner uses it to retire an outdated plan.
+  const [mealsLogged, setMealsLogged] = useState(0)
 
   const nutrition = useResource(getNutritionState, version)
   const recommendations = useResource(getRecommendations, version)
@@ -227,6 +229,7 @@ function Dashboard() {
   function handleMealLogged(meal: MealLog, servings: number) {
     setNotice(`Logged ${meal.name}, ${servings} serving${servings === 1 ? '' : 's'}.`)
     setVersion((current) => current + 1)
+    setMealsLogged((current) => current + 1)
   }
 
   // A rating changes the meal's row and its recipe's enjoyment score, so refetch everything.
@@ -249,7 +252,7 @@ function Dashboard() {
       )}
       <div className="dashboard">
         <div className="main-column">
-          <MealPlanner />
+          <MealPlanner mealsLogged={mealsLogged} onMealLogged={handleMealLogged} />
           <Section title="What to make" state={recommendations} className="shelf">
             {(items) => <RecommendationList items={items} onMealLogged={handleMealLogged} />}
           </Section>
