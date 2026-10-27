@@ -122,7 +122,7 @@ Milestone 7 slices:
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Implemented |
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Implemented |
 | 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Implemented |
-| 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Not started |
+| 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | In progress (plan display implemented; logging from the plan next) |
 | 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
 
 Milestone 7 is complete only after the deployed planning workflow has been exercised end to end,
@@ -146,6 +146,9 @@ Deliberate shortcuts and cleanup, recorded so they are not lost:
   non-SQLite database.
 - Authentication is deferred: once deployed (Milestone 6), the demo is public and anyone with the
   URL can read and write its data.
+- Meal planning is a one-shot form, not a conversation. A possible next step that stays
+  stateless: "refine this plan", sending the current plan's recipe ids and a new instruction as
+  a fresh, capped, validated request (no stored chat history).
 - The frontend has no automated tests; CI only type-checks and builds it. Behavior is verified
   by hand (README demo walkthrough).
 - Every write (logging or rating a meal) refetches all four dashboard sections; fine for one
@@ -773,7 +776,8 @@ Verified by the developer against `https://fridgefit-api.onrender.com` on 2026-1
   posts to `/recipes/{id}/confirm` with a caller-supplied `Idempotency-Key` and returns
   `logged` (201, or 200 when replayed) or `shortfall` (409); other errors become readable
   messages. `rateMeal()` posts to `/meal-logs/{id}/feedback` and returns `rated` or
-  `already_rated` (409).
+  `already_rated` (409). `planMeals()` posts to `/meal-plans` (meal count, max prep, preference;
+  servings and date are left to the server's defaults) and returns the plan.
 - `src/useResource.ts`: the `useResource` hook (loading/error/ready for one request, ignoring
   late responses). A `reloadToken` argument refetches while keeping the current data on
   screen. `src/format.ts`: display formatting (units, 0–100 scores, times, and
@@ -807,6 +811,15 @@ Verified by the developer against `https://fridgefit-api.onrender.com` on 2026-1
   repeat is rejected (409). Buttons are disabled while sending. On success or "already rated"
   the dashboard shows a notice and refetches, so the stored rating and the recipe's enjoyment
   score update.
+- `src/MealPlanner.tsx` (Milestone 7 Slice 8): "Plan my day", above "What to make" in the main
+  column. A form: meals (1–5, default 2), optional max prep minutes (1–240), optional preference
+  (at most 300 characters), checked before sending. The button reads "Planning…" with "This can
+  take up to a minute." while the request runs. The result shows "Planned by Claude" with
+  Claude's explanation, or "Planned by FridgeFit's rules" with a plain sentence for
+  `ai_limit`, `ai_failed`, or `ai_plan_invalid` (none for `ai_disabled`); then each meal in
+  order with prep time, calories and protein, ingredients used, and shortages in amber; and
+  what is left of today afterwards. Numbers are rounded for display only. A form, not a chat:
+  one request is one bounded planning attempt.
 - Design pass (Slice 6): `src/index.css` is one token system (light and dark) following
   `architecture.md` § Visual design. Layout: the ranked list on a white "shelf" with the top
   pick set large; a sidebar with Today (calories left as the one large figure, meters for

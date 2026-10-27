@@ -89,6 +89,40 @@ export type ConfirmResult =
   | { status: 'logged'; meal: MealLog; replayed: boolean }
   | { status: 'shortfall'; shortfalls: Shortfall[] }
 
+export type PlanRequest = {
+  meal_count: number
+  max_prep_minutes: number | null
+  preference: string | null
+}
+
+export type FallbackReason = 'ai_disabled' | 'ai_failed' | 'ai_plan_invalid' | 'ai_limit'
+
+export type PlannedMeal = {
+  recipe_id: number
+  name: string
+  prep_minutes: number
+  servings: number
+  ingredients_used: { ingredient_id: number; name: string; unit: CanonicalUnit; quantity: number }[]
+  shortages: {
+    ingredient_id: number
+    name: string
+    unit: CanonicalUnit
+    needed: number
+    available: number
+  }[]
+  macros: Macros
+  remaining_after: Macros | null
+}
+
+export type MealPlan = {
+  source: 'ai' | 'baseline'
+  // Written by Claude; only present for an AI plan. Every number elsewhere is FridgeFit's.
+  explanation: string | null
+  fallback_reason: FallbackReason | null
+  meals: PlannedMeal[]
+  remaining_at_end: Macros | null
+}
+
 export type HealthResult = { ok: true } | { ok: false; message: string }
 
 /** Thrown when no response arrives at all (server down, wrong URL, or CORS refusal). */
@@ -183,6 +217,27 @@ export async function confirmMeal(
     throw new Error(await describeError(response))
   }
   return { status: 'logged', meal: await response.json(), replayed: response.status === 200 }
+}
+
+/**
+ * Plan the rest of today's meals (POST /meal-plans). Nothing is written. The backend always
+ * answers 200 with a plan: Claude's when it passes FridgeFit's checks, otherwise its own.
+ */
+export async function planMeals(request: PlanRequest): Promise<MealPlan> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/meal-plans`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+  } catch {
+    throw new BackendUnreachable()
+  }
+  if (!response.ok) {
+    throw new Error(await describeError(response))
+  }
+  return (await response.json()) as MealPlan
 }
 
 /**
