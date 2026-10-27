@@ -3,7 +3,7 @@
 Snapshot of the repository's actual state. Update this file whenever a slice or milestone lands.
 If it disagrees with the code, the code is correct and this file is stale.
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
 ---
 
@@ -123,10 +123,60 @@ Milestone 7 slices:
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Implemented |
 | 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Implemented |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Implemented |
-| 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
+| 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | In progress (README and write-up done; deployed end-to-end run next) |
 
 Milestone 7 is complete only after the deployed planning workflow has been exercised end to end,
 and it claims AI improves planning only if the evaluation supports that.
+
+**Results (Slice 9).** The detailed numbers are under Planner evaluation › Live AI evaluation.
+
+- **Chosen configuration:** `claude-haiku-5-5` at effort low, deployed with
+  `PLANNER_DAILY_LIMIT=50`. In the evaluation it planned exactly like Sonnet 5.5 and almost
+  exactly like Opus 5.5 (they differed in one scenario) at about 1/16 and 1/33 of their cost:
+  about $0.0013 and 6 s per plan (max 10.6 s). Deployed, one logged plan cost an estimated
+  $0.00112 and took 8.0 s.
+- **Does AI improve planning?** Partly, and the evidence is narrow. On 7 scenarios: a clear
+  gain in 2 (`macros-nearly-used`, 64 vs. 306 kcal over the goal; `high-protein-preference`,
+  88.8 vs. 74 g of protein, meeting the 85 g bar the baseline misses because it ignores
+  preference text), a small gain in 1 (`well-stocked`), a tradeoff in 1 (`short-inventory`),
+  and the same recipes in 3. On the deployed demo data it chose the baseline's plan. It never
+  showed an invalid plan, by construction: unvalidated plans are not returned. It also adds a
+  written explanation, which the baseline cannot.
+- **Reliability seen live:** 35 of 35 evaluation attempts produced a valid plan on the first
+  submission, and both deployed AI requests returned Claude's plan (the one whose log line was
+  checked needed no correction); no fallback was needed.
+
+**Failure modes.** What can go wrong, what FridgeFit does, and what the user sees:
+
+| Failure | Handling | User sees |
+|---|---|---|
+| No model or key configured | No call is made | The baseline plan, `ai_disabled` (no warning) |
+| Provider error, rate limit, timeout, refusal, truncated reply, no plan, 6-call or 60 s limit | The attempt ends with that outcome; the detail goes to the server log | The baseline plan, `ai_failed`; after up to 60 s in the worst case |
+| A plan that breaks a rule (unknown or repeated recipe, too many meals, over the prep limit, ineligible, too few meals while more are possible) | Rejected with every problem listed; one correction allowed | A corrected AI plan, or the baseline plan with `ai_plan_invalid` |
+| Daily cap reached | Claude is not called | The baseline plan, `ai_limit` |
+| A meal logged that the plan did not include | The frontend tracks which plan meals were logged in order | The plan is marked out of date; plan again |
+
+Known limits that remain:
+
+- **Explanations are not checked.** They are Claude's words; FridgeFit never parses them.
+  Deployed explanations rounded figures inconsistently (98 or 99 g of protein for FridgeFit's
+  97.9 g) and contained a typo. Every number in `meals` is FridgeFit's.
+- **Preference text is untrusted input to the model.** It is capped at 300 characters and can
+  only steer a choice among existing recipes, which is then validated; the explanation could
+  still say something odd. React renders it as text, not HTML.
+- **The cap is per process and in memory.** A restart resets it, and several instances would
+  each get their own. With no authentication, anyone can spend up to the cap each day
+  (about $0.07 at the measured cost); a monthly spend limit on the Anthropic account backs it
+  up.
+- **Latency.** An AI plan takes seconds, against milliseconds for the baseline, plus the free
+  tier's cold start after the API sleeps.
+- **Plans are followed in order.** A plan is a validated sequence; eating its meals in another
+  order is not supported.
+- **Cost estimates** come from a hand-copied price table (`app/evaluation/pricing.py`, as of
+  2026-10-06); raw token counts are the record.
+- **Not shown by the evaluation:** the correction and fallback paths working against the real
+  API (covered only by fake-client tests); effort levels other than low; scenarios beyond these
+  seven; Sonnet's and Opus's consistency (one run each); prompt caching as a saving.
 
 ## Known Follow-ups
 
@@ -912,7 +962,7 @@ with:
 - Manual macro-only meal creation, in the API or the frontend
 - Authentication and users
 - Nutrition-data API integration
-- Runtime Claude meal generation
+- Claude-generated recipes or nutrition values (Claude plans only with existing recipes)
 - Ranking weights configurable per recommendation request (the defaults are fixed in
   `DEFAULT_WEIGHTS`)
 - Manual inventory correction
