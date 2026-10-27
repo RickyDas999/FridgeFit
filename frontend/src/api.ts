@@ -16,6 +16,9 @@ export type NutritionState = {
   remaining: Macros | null
 }
 
+// The fields of GET /ingredients the frontend uses; the response also carries nutrition data.
+export type Ingredient = { id: number; name: string; canonical_unit: CanonicalUnit }
+
 export type InventoryItem = {
   ingredient_id: number
   name: string
@@ -175,6 +178,8 @@ export const getInventory = () => getJson<InventoryItem[]>('/inventory')
 export const getRecommendations = () => getJson<Recommendation[]>('/recommendations')
 export const getTodaysMeals = () => getJson<MealLog[]>('/meal-logs')
 export const getRecipe = (recipeId: number) => getJson<Recipe>(`/recipes/${recipeId}`)
+// Sorted by name by the backend.
+export const getIngredients = () => getJson<Ingredient[]>('/ingredients')
 
 /** Turn a FastAPI error response into a readable message (a `detail` string or error list). */
 async function describeError(response: Response): Promise<string> {
@@ -221,6 +226,31 @@ export async function confirmMeal(
     throw new Error(await describeError(response))
   }
   return { status: 'logged', meal: await response.json(), replayed: response.status === 200 }
+}
+
+/**
+ * Record groceries as a new inventory batch (POST /inventory/batches). The purchase time is
+ * left to the server, which uses now. An unknown ingredient (404) or invalid quantity (422)
+ * becomes an Error with the backend's message.
+ */
+export async function addInventoryBatch(
+  ingredientId: number,
+  quantity: number,
+  useByDate: string | null,
+): Promise<void> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/inventory/batches`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ingredient_id: ingredientId, quantity, use_by_date: useByDate }),
+    })
+  } catch {
+    throw new BackendUnreachable()
+  }
+  if (!response.ok) {
+    throw new Error(await describeError(response))
+  }
 }
 
 /**
