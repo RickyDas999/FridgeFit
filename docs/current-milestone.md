@@ -53,6 +53,19 @@ not a feature milestone.
    meal-confirmation writes and idempotent replay, was exercised. Architecture:
    `docs/architecture.md` › Environments and Deployment; operations: README › Deployment.
 
+7. **Guardrailed AI Meal Planning** (completed 2026-10-26): "plan the rest of today's meals",
+   by Claude as a planning layer over the deterministic domain. A deterministic multi-meal
+   baseline planner; an evaluation harness with seven scenarios; three read-only in-process
+   tools; a bounded Claude loop (6 calls, 4,096 tokens per call, 60 s) whose every plan is
+   replayed and validated, with one correction and the baseline as fallback; usage and cost
+   instrumentation and a live comparison of Haiku, Sonnet, and Opus 5.5 that chose Haiku at low
+   effort; `POST /meal-plans` with coarse fallback codes and a daily AI cap; and "Plan my day"
+   in the frontend, logging planned meals in order through the existing confirmation. The
+   deployed browser → API → Claude → PostgreSQL workflow was exercised end to end. Results and
+   failure modes: the Milestone 7 section below.
+
+No milestone is active; the next one has not been approved yet.
+
 Milestone 6 slices:
 
 | Slice | Scope | Status |
@@ -74,8 +87,7 @@ without restarting the API); README › Deployment; `AGENTS.md` updated for SQLi
 PostgreSQL in production. Audit on 2026-10-25: every item of the milestone's definition of done
 checked against CI, the repository, and the live deployment.
 
-**Active milestone: 7 — Guardrailed AI Meal Planning.** Slices land one at a time, each only after
-the developer authorizes it; nothing below is implemented unless marked so. The durable decisions
+**Milestone 7 — Guardrailed AI Meal Planning** (completed 2026-10-26). The durable decisions
 are in `docs/architecture.md` › AI Meal Planning and `docs/domain-rules.md` › AI Trust Boundary.
 
 **Problem.** Recommendations answer "what single recipe should I make now?", scoring one recipe at
@@ -123,7 +135,7 @@ Milestone 7 slices:
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Implemented |
 | 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Implemented |
 | 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Implemented |
-| 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | In progress (README and write-up done; deployed end-to-end run next) |
+| 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Implemented |
 
 Milestone 7 is complete only after the deployed planning workflow has been exercised end to end,
 and it claims AI improves planning only if the evaluation supports that.
@@ -133,18 +145,19 @@ and it claims AI improves planning only if the evaluation supports that.
 - **Chosen configuration:** `claude-haiku-5-5` at effort low, deployed with
   `PLANNER_DAILY_LIMIT=50`. In the evaluation it planned exactly like Sonnet 5.5 and almost
   exactly like Opus 5.5 (they differed in one scenario) at about 1/16 and 1/33 of their cost:
-  about $0.0013 and 6 s per plan (max 10.6 s). Deployed, one logged plan cost an estimated
-  $0.00112 and took 8.0 s.
+  about $0.0013 and 6 s per plan (max 10.6 s). Deployed, the two plans whose log lines were
+  checked cost an estimated $0.00112 and $0.00113 and took 8.0 s and 4.7 s.
 - **Does AI improve planning?** Partly, and the evidence is narrow. On 7 scenarios: a clear
   gain in 2 (`macros-nearly-used`, 64 vs. 306 kcal over the goal; `high-protein-preference`,
   88.8 vs. 74 g of protein, meeting the 85 g bar the baseline misses because it ignores
   preference text), a small gain in 1 (`well-stocked`), a tradeoff in 1 (`short-inventory`),
-  and the same recipes in 3. On the deployed demo data it chose the baseline's plan. It never
+  and the same recipes in 3. On the deployed demo data it chose the same two recipes the
+  baseline chose there, once in the reverse order. It never
   showed an invalid plan, by construction: unvalidated plans are not returned. It also adds a
   written explanation, which the baseline cannot.
 - **Reliability seen live:** 35 of 35 evaluation attempts produced a valid plan on the first
-  submission, and both deployed AI requests returned Claude's plan (the one whose log line was
-  checked needed no correction); no fallback was needed.
+  submission, and all three deployed AI requests returned Claude's plan (the two whose log
+  lines were checked needed no correction); no fallback was needed.
 
 **Failure modes.** What can go wrong, what FridgeFit does, and what the user sees:
 
@@ -787,6 +800,20 @@ Verified by the developer against `https://fridgefit-api.onrender.com` on 2026-1
   checked; every number in `meals` and `remaining_at_end` is FridgeFit's.
 - The daily cap (`ai_limit`) was not exercised in production, since proving it would take 50
   real calls; tests cover it.
+
+### Deployed planning workflow (Milestone 7 Slice 9)
+
+Exercised end to end by the developer on `https://fridgefit-3f2a.onrender.com` on 2026-10-26,
+on the aged demo data as it was (no refresh):
+
+- "Plan my day" with 2 meals showed "Planned by Claude" with an explanation and two meals:
+  Chicken pepper stir fry (recipe 4), then Chicken & broccoli rice bowl (recipe 1). Server log:
+  `outcome=submitted`, `claude-haiku-5-5` at effort low, 3 model calls, 2 tool calls,
+  0 rejected plans, 8,721 input and 514 output tokens, 4.7 s, estimated $0.00113.
+- "I ate this" on meal 1 logged it (`POST /recipes/4/confirm` → 201); it showed "(eaten)" and
+  meal 2 became loggable. Logging meal 2 (`POST /recipes/1/confirm` → 201) showed "You have
+  eaten every meal in this plan." The sidebar (calories left, Eaten today, In the fridge)
+  updated after each log.
 
 ### Demo seed (`scripts/seed_demo.py`)
 
