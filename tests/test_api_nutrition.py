@@ -1,8 +1,9 @@
 from datetime import date, datetime
 
 import pytest
+from sqlalchemy import event
 
-from app.persistence.models import MealLog
+from app.persistence.models import MealLog, NutritionGoal
 
 GOAL = {"calories": 2000, "protein": 150, "carbs": 200, "fat": 70, "effective_date": "2026-10-01"}
 
@@ -43,6 +44,30 @@ def test_second_goal_on_the_same_date_is_rejected_with_409(client):
     assert response.status_code == 409
     assert response.json() == {"detail": "A goal already starts on 2026-10-01"}
 
+
+
+def test_losing_a_same_date_race_is_rejected_with_409(app, client):
+    """A goal whose date another request commits after the duplicate check still gets 409."""
+
+    def other_request_commits_first(*_args):
+        """Commit a goal for the same date in another session, as a concurrent request would.
+
+        Runs as this request flushes its insert: after its duplicate check found nothing.
+
+        Args:
+            *_args: The event's arguments; unused.
+        """
+        with app.state.session_factory() as other_session:
+            other_session.add(NutritionGoal(**{**GOAL, "effective_date": date(2026, 10, 1)}))
+            other_session.commit()
+
+    event.listen(app.state.session_factory, "before_flush", other_request_commits_first, once=True)
+    response = client.post("/nutrition-goals", json={**GOAL, "calories": 1800})
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "A goal already starts on 2026-10-01"}
+    state = client.get("/nutrition-state", params={"as_of": "2026-10-01"}).json()
+    assert state["goal"]["calories"] == 2000  # the winner's goal, not this request's
 
 def test_invalid_goals_are_rejected_with_422(client):
     """Negative targets and malformed dates are rejected."""

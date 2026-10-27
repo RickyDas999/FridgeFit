@@ -444,6 +444,16 @@ def test_negative_nutrition_goal_calories_rejected(session):
         session.commit()
 
 
+
+def test_two_nutrition_goals_on_the_same_date_rejected(session):
+    """The database rejects a second NutritionGoal starting on the same date."""
+    session.add(make_nutrition_goal(effective_date=date(2026, 1, 1)))
+    session.commit()
+
+    session.add(make_nutrition_goal(effective_date=date(2026, 1, 1), calories=2000))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
 def test_meal_feedback_persists_and_retrieves(session):
     """MealFeedback round-trips and links back to its MealLog."""
     meal_log = make_meal_log()

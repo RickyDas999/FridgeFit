@@ -3,6 +3,8 @@ from datetime import date
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.api.recipes import MacrosResponse
 from app.api.session import SessionDep
@@ -63,18 +65,40 @@ def create_goal(body: GoalCreate, session: SessionDep) -> GoalResponse:
     Raises:
         HTTPException: 409 if a goal already starts on that date.
     """
-    existing = session.scalar(
-        select(NutritionGoal).where(NutritionGoal.effective_date == body.effective_date)
+    duplicate = HTTPException(
+        status_code=409, detail=f"A goal already starts on {body.effective_date}"
     )
-    if existing is not None:
-        raise HTTPException(
-            status_code=409, detail=f"A goal already starts on {body.effective_date}"
-        )
+    if _goal_starting_on(session, body.effective_date) is not None:
+        raise duplicate
 
     goal = NutritionGoal(**body.model_dump())
     session.add(goal)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # A concurrent request may have committed a goal for this date after the check above.
+        # The failed transaction must be rolled back before the session can query again. If no
+        # goal holds the date, the violation was something else, so it stays an error.
+        session.rollback()
+        if _goal_starting_on(session, body.effective_date) is None:
+            raise
+        raise duplicate from None
     return GoalResponse.model_validate(goal)
+
+
+def _goal_starting_on(session: Session, effective_date: date) -> NutritionGoal | None:
+    """Find the goal that starts on a date.
+
+    Args:
+        session: An open database session.
+        effective_date: The start date to look up.
+
+    Returns:
+        The goal starting on that date, or None if there is none.
+    """
+    return session.scalar(
+        select(NutritionGoal).where(NutritionGoal.effective_date == effective_date)
+    )
 
 
 @router.get("/nutrition-state")
