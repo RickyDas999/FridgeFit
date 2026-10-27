@@ -249,6 +249,62 @@ input {
   margin-bottom: var(--space-3);
 }
 
+/* ---- Plan my day ---- */
+
+.main-column {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.plan-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.plan-form label {
+  display: grid;
+  gap: var(--space-1);
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.plan-form input[type='number'] {
+  width: 6rem;
+}
+
+.plan-preference {
+  flex: 1 1 14rem;
+}
+
+.plan-form + p {
+  margin-top: var(--space-3);
+}
+
+.plan-result {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.plan-source {
+  font-weight: 700;
+}
+
+.planned-meals {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-2) 0;
+  padding-left: var(--space-5);
+}
+
+.planned-meal-name {
+  font-weight: 700;
+}
+
 /* ---- Recommendations ---- */
 
 .recommendations {

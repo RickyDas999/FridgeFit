@@ -11,6 +11,7 @@ import {
   type Recommendation,
 } from './api'
 import { formatQuantity, formatScore, formatTime } from './format'
+import MealPlanner from './MealPlanner'
 import RateMeal from './RateMeal'
 import RecommendationDetail from './RecommendationDetail'
 import { useResource, type Loadable } from './useResource'
@@ -247,9 +248,12 @@ function Dashboard() {
         </p>
       )}
       <div className="dashboard">
-        <Section title="What to make" state={recommendations} className="shelf">
-          {(items) => <RecommendationList items={items} onMealLogged={handleMealLogged} />}
-        </Section>
+        <div className="main-column">
+          <MealPlanner />
+          <Section title="What to make" state={recommendations} className="shelf">
+            {(items) => <RecommendationList items={items} onMealLogged={handleMealLogged} />}
+          </Section>
+        </div>
         <aside className="sidebar">
           <Section title="Today" state={nutrition} className="side-section">
             {(state) => <NutritionSummary state={state} />}
