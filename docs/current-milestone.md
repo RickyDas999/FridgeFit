@@ -822,9 +822,12 @@ Verified by the developer against `https://fridgefit-api.onrender.com` on 2026-1
   one request is one bounded planning attempt.
   Each planned meal has the same "I ate this" (`LogMeal`) as a recommendation, so logging keeps
   its idempotency keys and shortfall override, and the backend consumes the stock on hand at
-  that moment. The dashboard counts meals logged from anywhere on the page; a plan remembers
-  the count it was requested at, and once a meal is logged it is replaced by a note to plan
-  again, because its stock and macro numbers no longer hold.
+  that moment. The plan is followed in order: only the next meal offers "I ate this", and
+  logging it at the planned servings marks it eaten and keeps the rest, whose numbers already
+  assume the earlier meals (the simulation and confirmation draw stock the same way, soonest
+  use-by first). The dashboard counts meals logged from anywhere on the page; a log the plan
+  did not simulate (from the recommendations, or at different servings) moves that count past
+  the plan's own, and the plan is replaced by a note to plan again.
 - Design pass (Slice 6): `src/index.css` is one token system (light and dark) following
   `architecture.md` § Visual design. Layout: the ranked list on a white "shelf" with the top
   pick set large; a sidebar with Today (calories left as the one large figure, meters for

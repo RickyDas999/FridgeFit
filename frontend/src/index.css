@@ -309,6 +309,10 @@ input {
   margin-top: var(--space-2);
 }
 
+.planned-meals li.eaten {
+  color: var(--muted);
+}
+
 .plan-stale {
   margin-top: var(--space-4);
 }
