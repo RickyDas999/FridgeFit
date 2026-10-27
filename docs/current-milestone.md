@@ -3,7 +3,7 @@
 Snapshot of the repository's actual state. Update this file whenever a slice or milestone lands.
 If it disagrees with the code, the code is correct and this file is stale.
 
-Last updated: 2026-10-26
+Last updated: 2026-10-27
 
 ---
 
@@ -64,18 +64,23 @@ not a feature milestone.
    deployed browser → API → Claude → PostgreSQL workflow was exercised end to end. Results and
    failure modes: the Milestone 7 section below.
 
-**Active milestone: 8 — On-Demand Baseline Planning.** FridgeFit's deterministic plan, on request,
-whatever the AI configuration, so a user can plan with Claude or with FridgeFit's rules and
-compare the two plans themselves. It is not a comparison view: one plan is shown at a time.
-The baseline is deterministic, free, and never calls Claude, so asking for it needs no model,
-no key, and no share of the daily AI cap.
+8. **On-Demand Baseline Planning** (completed 2026-10-27): FridgeFit's deterministic plan, on
+   request, whatever the AI configuration, so a user can plan with Claude or with FridgeFit's
+   rules and compare the two plans themselves. One plan is shown at a time, with a switch
+   between the latest from each. The baseline is deterministic, free, and never calls Claude,
+   so asking for it needs no model, no key, and no share of the daily AI cap. Exercised on the
+   deployed site: see Deployed baseline planning below.
+
+Milestone 8 slices:
 
 | Slice | Scope | Status |
 |---|---|---|
 | 1 | `planner: "ai" \| "baseline"` on `POST /meal-plans` (default `"ai"`, unchanged); `"baseline"` returns the baseline plan with `fallback_reason` null | Implemented |
 | 2 | "Plan with Claude" and "Plan with FridgeFit's rules" buttons in "Plan my day"; either plan can be followed and logged in order | Implemented |
 | 3 | A "Claude \| FridgeFit's rules" switch between the latest plan from each planner, each showing the inputs it was planned for | Implemented |
-| 4 | Deployed check, README, and closeout | Not started |
+| 4 | Deployed check, README, and closeout | Implemented |
+
+No milestone is active; the next one has not been approved yet.
 
 Milestone 6 slices:
 
@@ -829,6 +834,26 @@ on the aged demo data as it was (no refresh):
   meal 2 became loggable. Logging meal 2 (`POST /recipes/1/confirm` → 201) showed "You have
   eaten every meal in this plan." The sidebar (calories left, Eaten today, In the fridge)
   updated after each log.
+
+### Deployed baseline planning (Milestone 8 Slice 4)
+
+Checked by the developer on `https://fridgefit-3f2a.onrender.com` on 2026-10-27, on the aged
+demo data, with 2 meals, no prep limit, and the preference "no rice today":
+
+- "Plan with FridgeFit's rules": "Planned by FridgeFit's rules" with no warning sentence and
+  "Planned for 2 meals, any prep, "no rice today"": Chicken pepper stir fry (uses 125 g of
+  cooked rice), then Overnight oats; afterwards 1,302 kcal and 87 g protein left. The rules
+  ignored the preference, as designed. Server log: `source=baseline fallback=None (baseline
+  requested)`.
+- "Plan with Claude": "Planned by Claude", Spinach omelette then Overnight oats, both
+  rice-free; afterwards 1,476 kcal and 110 g protein left. The explanation named the
+  preference, the soon-due spinach, banana, milk, and yogurt, and the chicken dishes left out
+  because they use rice. Server log: `outcome=submitted`, `claude-haiku-5-5` at effort low,
+  4 model calls, 3 tool calls, 0 rejected plans, 13,576 input and 828 output tokens, 8.4 s,
+  estimated $0.00177 (more than earlier plans: one more model and tool call).
+- The "Claude | FridgeFit's rules" switch appeared once both plans existed and showed either
+  instantly. Logging the omelette from Claude's plan marked it "(eaten)", and the rules plan
+  then showed it was out of date.
 
 ### Demo seed (`scripts/seed_demo.py`)
 

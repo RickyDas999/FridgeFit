@@ -133,13 +133,15 @@ A five-minute tour of the full flow. Start from a fresh seed so the numbers matc
 6. **A shortfall.** Choose "I ate this" again with 20 servings. FridgeFit lists what is short
    instead of logging it, and "Log anyway with what I have" logs only what is in the fridge.
 7. **Rate it.** Rate a meal under "Eaten today"; the recipe's enjoyment score updates.
-8. **Plan the day.** Under "Plan my day", plan 2 meals. Locally, with no planner configured,
-   the plan reads "Planned by FridgeFit's rules"; with one (see [AI meal
-   planning](#ai-meal-planning)) it reads "Planned by Claude" with Claude's explanation. Each meal
-   shows what it uses and what is left of today afterwards. Follow the plan in order: "I ate
-   this" on the first meal logs it and marks it eaten, and the next meal becomes loggable.
-   Logging anything the plan did not include (another recipe, or different servings) marks the
-   plan out of date.
+8. **Plan the day.** Under "Plan my day", enter 2 meals and a preference such as "no rice
+   today". "Plan with FridgeFit's rules" returns FridgeFit's deterministic plan, which ignores
+   the preference. "Plan with Claude" returns Claude's plan with its explanation when a planner
+   is configured (see [AI meal planning](#ai-meal-planning)); locally without one, it falls back
+   to the same rules plan. Once you have both, the "Claude | FridgeFit's rules" switch shows
+   either, each with the inputs it was planned for. Each meal shows what it uses and what is
+   left of today afterwards. Follow a plan in order: "I ate this" on the first meal logs it and
+   marks it eaten, and the next meal becomes loggable. Logging anything a plan did not include
+   (another recipe, different servings, or a meal from the other plan) marks it out of date.
 
 Worth mentioning under the hood: the backend owns every rule (ranking, availability, FEFO
 consumption, serving scaling); each "Log meal" sends an `Idempotency-Key`, so a retried request
@@ -166,6 +168,10 @@ light"). Claude is a planning layer on top of FridgeFit's deterministic domain, 
   server log.
 - **Cost cap.** The endpoint is public, so `PLANNER_DAILY_LIMIT` caps AI attempts per server
   day (50 in production); past it, plans come from FridgeFit's rules.
+- **FridgeFit's plan on request.** `"planner": "baseline"` (the "Plan with FridgeFit's rules"
+  button) returns the deterministic plan whatever the AI configuration: no Claude call, no cost,
+  and no share of the cap. Compare it with Claude's plan to see what the AI changes; giving a
+  preference shows it best, since FridgeFit's rules ignore preference text.
 
 With the deployed configuration (`claude-haiku-5-5` at low effort) a plan costs about $0.001
 and takes about 5–10 seconds. The evaluation that chose it, comparing three models with
@@ -301,7 +307,7 @@ Verified on Render, or locally against PostgreSQL where noted:
 | `POST /recipes/{recipe_id}/confirm` | Log a meal and consume its ingredients; send an `Idempotency-Key` header to make retries safe |
 | `GET /meal-logs?consumed_on=` | Meals eaten on a day |
 | `POST /meal-logs/{meal_log_id}/feedback` | Rate a meal 1–5 |
-| `POST /meal-plans` | Plan the rest of today's meals with Claude, or FridgeFit's planner as the fallback; writes nothing |
+| `POST /meal-plans` | Plan the rest of today's meals with Claude (FridgeFit's planner as the fallback), or with FridgeFit's planner directly via `"planner": "baseline"`; writes nothing |
 
 Dates are `YYYY-MM-DD` and default to today; datetimes are local time without a timezone.
 
