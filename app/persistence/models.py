@@ -163,7 +163,8 @@ class NutritionGoal(Base):
     protein: Mapped[float]
     carbs: Mapped[float]
     fat: Mapped[float]
-    effective_date: Mapped[date]
+    # Unique, so the goal in effect on a date is never ambiguous.
+    effective_date: Mapped[date] = mapped_column(unique=True)
 
 
 class MealFeedback(Base):
