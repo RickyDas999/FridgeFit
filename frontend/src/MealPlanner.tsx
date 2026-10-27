@@ -87,7 +87,7 @@ function PlannedMealItem(props: { meal: PlannedMeal; step: MealStep; onLogged: O
 function PlanResult(props: {
   plan: MealPlan
   eaten: number
-  onPlannedMealLogged: (index: number, meal: MealLog, servings: number) => void
+  onPlannedMealLogged: (plan: MealPlan, index: number, meal: MealLog, servings: number) => void
 }) {
   const { plan, eaten, onPlannedMealLogged } = props
   const reason = plan.fallback_reason && FALLBACK_SENTENCES[plan.fallback_reason]
@@ -108,7 +108,7 @@ function PlanResult(props: {
               key={meal.recipe_id}
               meal={meal}
               step={index < eaten ? 'eaten' : index === eaten ? 'next' : 'later'}
-              onLogged={(logged, servings) => onPlannedMealLogged(index, logged, servings)}
+              onLogged={(logged, servings) => onPlannedMealLogged(plan, index, logged, servings)}
             />
           ))}
         </ol>
@@ -148,10 +148,23 @@ function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged })
   } | null>(null)
   const stale = result !== null && result.mealsLogged + result.eaten !== mealsLogged
 
-  function handlePlannedMealLogged(index: number, meal: MealLog, servings: number) {
-    if (result && index === result.eaten && servings === result.plan.meals[index].servings) {
-      setResult({ ...result, eaten: result.eaten + 1 })
-    }
+  function handlePlannedMealLogged(
+    plan: MealPlan,
+    index: number,
+    meal: MealLog,
+    servings: number,
+  ) {
+    // A functional update reads the plan on screen now, not when "Log meal" was clicked: a new
+    // plan may have arrived while the log was in flight, and it must not be overwritten. Only
+    // the plan the meal came from advances; a newer one stays and shows as out of date.
+    setResult((current) =>
+      current !== null &&
+      current.plan === plan &&
+      index === current.eaten &&
+      servings === plan.meals[index].servings
+        ? { ...current, eaten: current.eaten + 1 }
+        : current,
+    )
     onMealLogged(meal, servings)
   }
 
