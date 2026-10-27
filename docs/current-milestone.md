@@ -935,7 +935,7 @@ on the aged demo data as it was (no refresh):
 
 ### Tests
 
-398 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+399 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
