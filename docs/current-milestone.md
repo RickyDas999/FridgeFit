@@ -64,7 +64,17 @@ not a feature milestone.
    deployed browser → API → Claude → PostgreSQL workflow was exercised end to end. Results and
    failure modes: the Milestone 7 section below.
 
-No milestone is active; the next one has not been approved yet.
+**Active milestone: 8 — On-Demand Baseline Planning.** FridgeFit's deterministic plan, on request,
+whatever the AI configuration, so a user can plan with Claude or with FridgeFit's rules and
+compare the two plans themselves. It is not a comparison view: one plan is shown at a time.
+The baseline is deterministic, free, and never calls Claude, so asking for it needs no model,
+no key, and no share of the daily AI cap.
+
+| Slice | Scope | Status |
+|---|---|---|
+| 1 | `planner: "ai" \| "baseline"` on `POST /meal-plans` (default `"ai"`, unchanged); `"baseline"` returns the baseline plan with `fallback_reason` null | Implemented |
+| 2 | "Plan with Claude" and "Plan with FridgeFit's rules" buttons in "Plan my day"; either plan can be followed and logged in order | Not started |
+| 3 | Deployed check, README, and closeout | Not started |
 
 Milestone 6 slices:
 
@@ -674,6 +684,10 @@ raises for model or provider problems. It writes nothing.
     configured), `ai_plan_invalid` (still invalid after the one correction), `ai_failed` (any
     other outcome: provider error, refusal, truncation, no plan, step or time limit), and
     `ai_limit` (today's AI attempts reached `PLANNER_DAILY_LIMIT`; Claude is not called).
+    Optional `planner` (Milestone 8): `"ai"` (default, the behavior above) or `"baseline"`,
+    which returns FridgeFit's plan without calling Claude, whatever the configuration, with
+    `source` `baseline` and `fallback_reason` null (it was asked for, not a fallback), and is not
+    counted against the cap. Any other value → 422.
     Only requests that would call Claude count, and the day is the server's, not `as_of`, so
     changing `as_of` does not reset the cap. Provider error text, tokens, latency, and estimated
     cost (`estimate_cost`) go to one INFO server log line per request, never to the response.
@@ -921,7 +935,7 @@ on the aged demo data as it was (no refresh):
 
 ### Tests
 
-395 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
+398 tests across `tests/test_models.py`, `tests/test_database.py`, `tests/test_migrations.py`,
 `tests/test_seed_demo.py`, `tests/test_ai_review.py`, one test module per domain
 module, and `tests/test_api.py` plus one `tests/test_api_<resource>.py` per route module. Run
 with:
