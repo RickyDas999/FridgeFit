@@ -122,7 +122,7 @@ Milestone 7 slices:
 | 5 | Deterministic validation and fallback: one bounded correction, otherwise the baseline plan | Implemented |
 | 6 | Cost/performance instrumentation and comparative evaluation: baseline vs. Claude configuration(s) | Implemented |
 | 7 | Meal planning HTTP API (`POST /meal-plans`, contract approved first); no mutation | Implemented |
-| 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | In progress (plan display implemented; logging from the plan next) |
+| 8 | Minimal frontend planning experience; logging a planned meal stays the existing confirmation | Implemented |
 | 9 | Evaluation and documentation closeout: chosen configuration and why, measured results, failure modes | Not started |
 
 Milestone 7 is complete only after the deployed planning workflow has been exercised end to end,
@@ -820,6 +820,11 @@ Verified by the developer against `https://fridgefit-api.onrender.com` on 2026-1
   order with prep time, calories and protein, ingredients used, and shortages in amber; and
   what is left of today afterwards. Numbers are rounded for display only. A form, not a chat:
   one request is one bounded planning attempt.
+  Each planned meal has the same "I ate this" (`LogMeal`) as a recommendation, so logging keeps
+  its idempotency keys and shortfall override, and the backend consumes the stock on hand at
+  that moment. The dashboard counts meals logged from anywhere on the page; a plan remembers
+  the count it was requested at, and once a meal is logged it is replaced by a note to plan
+  again, because its stock and macro numbers no longer hold.
 - Design pass (Slice 6): `src/index.css` is one token system (light and dark) following
   `architecture.md` § Visual design. Layout: the ranked list on a white "shelf" with the top
   pick set large; a sidebar with Today (calories left as the one large figure, meters for

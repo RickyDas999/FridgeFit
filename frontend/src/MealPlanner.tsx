@@ -1,6 +1,17 @@
 import { useState, type FormEvent } from 'react'
-import { planMeals, type FallbackReason, type Macros, type MealPlan, type PlannedMeal } from './api'
+import {
+  planMeals,
+  type CanonicalUnit,
+  type FallbackReason,
+  type Macros,
+  type MealLog,
+  type MealPlan,
+  type PlannedMeal,
+} from './api'
 import { formatQuantity } from './format'
+import LogMeal from './LogMeal'
+
+type OnMealLogged = (meal: MealLog, servings: number) => void
 
 // Why the AI plan was not used, in plain words. ai_disabled needs no warning: the rules are
 // simply how planning works when AI is off.
@@ -22,7 +33,12 @@ function macroLine(macros: Macros): string {
   return `${Math.round(macros.calories).toLocaleString()} kcal, ${Math.round(macros.protein)} g protein`
 }
 
-function PlannedMealItem({ meal }: { meal: PlannedMeal }) {
+function PlannedMealItem(props: { meal: PlannedMeal; onMealLogged: OnMealLogged }) {
+  const { meal, onMealLogged } = props
+  // Units for a shortfall the confirmation reports; every ingredient the plan touches is here.
+  const units = new Map<number, CanonicalUnit>(
+    [...meal.ingredients_used, ...meal.shortages].map((item) => [item.ingredient_id, item.unit]),
+  )
   return (
     <li>
       <p className="planned-meal-name">{meal.name}</p>
@@ -49,11 +65,18 @@ function PlannedMealItem({ meal }: { meal: PlannedMeal }) {
           </span>
         </p>
       )}
+      {/* The same confirmation as a recommendation: the backend consumes the stock it has now. */}
+      <LogMeal
+        recipeId={meal.recipe_id}
+        recipeName={meal.name}
+        unitOf={(id) => units.get(id)}
+        onLogged={onMealLogged}
+      />
     </li>
   )
 }
 
-function PlanResult({ plan }: { plan: MealPlan }) {
+function PlanResult({ plan, onMealLogged }: { plan: MealPlan; onMealLogged: OnMealLogged }) {
   const reason = plan.fallback_reason && FALLBACK_SENTENCES[plan.fallback_reason]
   return (
     <div className="plan-result">
@@ -68,7 +91,7 @@ function PlanResult({ plan }: { plan: MealPlan }) {
       ) : (
         <ol className="planned-meals">
           {plan.meals.map((meal) => (
-            <PlannedMealItem key={meal.recipe_id} meal={meal} />
+            <PlannedMealItem key={meal.recipe_id} meal={meal} onMealLogged={onMealLogged} />
           ))}
         </ol>
       )}
@@ -79,14 +102,22 @@ function PlanResult({ plan }: { plan: MealPlan }) {
   )
 }
 
-/** "Plan my day": ask the API for the rest of today's meals and show the plan it returns. */
-function MealPlanner() {
+/**
+ * "Plan my day": ask the API for the rest of today's meals and show the plan it returns.
+ *
+ * `mealsLogged` counts meals logged anywhere on the dashboard. A plan remembers the count it
+ * was requested at; once a meal is logged, its stock and macro numbers are out of date, so it
+ * is replaced by a note to plan again.
+ */
+function MealPlanner(props: { mealsLogged: number; onMealLogged: OnMealLogged }) {
+  const { mealsLogged, onMealLogged } = props
   const [mealCount, setMealCount] = useState('2')
   const [maxPrep, setMaxPrep] = useState('')
   const [preference, setPreference] = useState('')
   const [planning, setPlanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [plan, setPlan] = useState<MealPlan | null>(null)
+  const [result, setResult] = useState<{ plan: MealPlan; mealsLogged: number } | null>(null)
+  const stale = result !== null && result.mealsLogged !== mealsLogged
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -100,16 +131,17 @@ function MealPlanner() {
       setError('Max prep time must be a whole number of minutes from 1 to 240, or empty.')
       return
     }
+    // Taken before the request: a meal logged while planning makes this plan stale too.
+    const requestedAt = mealsLogged
     setPlanning(true)
     setError(null)
     try {
-      setPlan(
-        await planMeals({
-          meal_count: count,
-          max_prep_minutes: prep,
-          preference: preference.trim() || null,
-        }),
-      )
+      const plan = await planMeals({
+        meal_count: count,
+        max_prep_minutes: prep,
+        preference: preference.trim() || null,
+      })
+      setResult({ plan, mealsLogged: requestedAt })
     } catch (failure) {
       setError((failure as Error).message)
     } finally {
@@ -163,7 +195,15 @@ function MealPlanner() {
       </form>
       {planning && <p className="muted">This can take up to a minute.</p>}
       {error && <p className="error-text">{error}</p>}
-      {plan && !planning && <PlanResult plan={plan} />}
+      {result && !planning && stale && (
+        <p className="muted plan-stale">
+          A meal was logged, so this plan's stock and macros are out of date. Plan again for an
+          updated one.
+        </p>
+      )}
+      {result && !planning && !stale && (
+        <PlanResult plan={result.plan} onMealLogged={onMealLogged} />
+      )}
     </section>
   )
 }
