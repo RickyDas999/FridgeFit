@@ -92,17 +92,22 @@ Milestone 9 slices:
 |---|---|---|
 | 1 | "+ Add groceries" in "In the fridge": existing-ingredient dropdown, quantity with its unit, optional use-by date; dashboard refetch and plans marked out of date on success | Implemented |
 
-**Active milestone: 10 — Concurrency Hardening.** Make concurrent writes safe where they could
-leave wrong data or a misleading error: a lost update to inventory stock, duplicate nutrition
-goals for one date, and uniqueness races that surface as 500 instead of 409. No new endpoint and
-no API contract change.
+10. **Concurrency Hardening** (completed 2026-10-27): make concurrent writes safe where they
+    could leave wrong data or a misleading error: a lost update to inventory stock, duplicate
+    nutrition goals for one date, and uniqueness races that surface as 500 instead of 409. No
+    new endpoint and no API contract change. Exercised on the deployed API: see Deployed
+    concurrency hardening below.
+
+Milestone 10 slices:
 
 | Slice | Scope | Status |
 |---|---|---|
 | 1 | Meal confirmation locks the batches it draws from, so two confirmations at once cannot both use the same stock | Implemented |
 | 2 | Unique `NutritionGoal.effective_date` (Alembic migration); a concurrent duplicate gets 409 | Implemented |
 | 3 | Ingredient-name, recipe-name, and meal-rating races return 409 instead of 500 | Implemented |
-| 4 | Deployed check and closeout | Not started |
+| 4 | Deployed check and closeout | Implemented |
+
+No milestone is active; the next one has not been approved yet.
 
 Milestone 6 slices:
 
@@ -904,6 +909,26 @@ Checked by the developer on `https://fridgefit-3f2a.onrender.com` on 2026-10-27:
   cause: the pull request was rebase-merged, its last commit changed only docs, and the static
   site (`rootDir: frontend`) auto-deploys only for changes under `frontend/`. The check ran once
   the site was serving the new bundle.
+
+### Deployed concurrency hardening (Milestone 10)
+
+Checked by the developer against `https://fridgefit-api.onrender.com` on 2026-10-27:
+
+- Before deploying Slice 2, production had no two nutrition goals on the same date
+  (`GROUP BY effective_date HAVING count(*) > 1` → 0 rows). The deploy log then showed
+  `Running upgrade d22b106d0d3b -> 5c1e0f3a9b27, Unique nutrition goal effective date: ...`
+  before Uvicorn started.
+- After Slice 3 deployed: re-posting the existing goal's date (2026-09-24) → 409 "A goal already
+  starts on 2026-09-24"; re-posting "Greek yogurt" → 409 "Ingredient 'Greek yogurt' already
+  exists". Neither wrote anything.
+- Logging a spinach omelette from the dashboard (eggs 3, spinach 60 g, milk 30 ml) consumed
+  exactly that through the locked stock read: eggs 3 → 0 (gone from "In the fridge"), spinach
+  70 → 10 g, milk 710 → 680 ml; everything else unchanged.
+- Only the ordinary paths were exercised on the deployed API. The race paths themselves (a
+  waiting second confirmation, and losers of goal, name, and rating races) are covered by the
+  tests, not staged against production.
+- Only `fridgefit-api` redeployed; the static site correctly did not, since nothing under
+  `frontend/` changed.
 
 ### Demo seed (`scripts/seed_demo.py`)
 
